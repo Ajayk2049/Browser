@@ -1,0 +1,47 @@
+name: browser
+description: "A GeckoView-based Android browser with a built-in multi-threaded download manager."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State (rules.md §27.1, §29.4)
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Navigation (rules.md §27.1, §29.5)
+  go_router: ^14.8.1
+
+  # Browser Engine
+  webview_flutter: ^4.10.0
+  webview_flutter_geckoview: ^0.0.1+2
+
+  # Download & Networking (rules.md §26.5, §27.1)
+  dio: ^5.8.0+1
+  path_provider: ^2.1.5
+
+  # Security & KeyStore Storage (rules.md §26.2, §26.8)
+  flutter_secure_storage: ^9.2.4
+
+  # UI, Icons, Typography & Theming (rules.md §25.1, §25.2, §25.3, §27.1)
+  phosphoricons_flutter: ^1.1.1
+  google_fonts: ^6.2.1
+  dynamic_color: ^1.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code Generation
+  build_runner: ^2.4.15
+  riverpod_generator: ^2.6.4
+
+flutter:
+  uses-material-design: true

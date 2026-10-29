@@ -1,0 +1,43 @@
+# Analysis options configured per rules.md §13, §27.1, and §29.2
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    missing_required_param: error
+    missing_return: error
+    invalid_annotation_target: ignore
+
+# NOTE: Dart analyzer does not natively support a max-lines lint rule.
+# Per rules.md §13 and §29.2, strict manual line caps are enforced during review:
+# - Screen file: ≤300 lines
+# - Widget file: ≤250 lines
+# - Provider/Notifier file: ≤250 lines
+# - Repository file: ≤250 lines
+# - Model file: ≤200 lines
+# - Utility file: ≤200 lines
+
+linter:
+  rules:
+    # §13: lines_longer_than_80_chars disabled, manual line caps apply
+    lines_longer_than_80_chars: false
+
+    # §26.1 / §26.5: Zero logging of passwords, tokens, or raw prints
+    avoid_print: true
+
+    # Code quality & safety rules
+    always_declare_return_types: true
+    cancel_subscriptions: true
+    close_sinks: true
+    prefer_const_constructors: true
+    prefer_const_constructors_in_immutables: true
+    prefer_const_declarations: true
+    prefer_final_locals: true
+    prefer_single_quotes: true
+    unawaited_futures: true
+    unnecessary_await_in_return: true
+    use_build_context_synchronously: true
+    use_super_parameters: true
