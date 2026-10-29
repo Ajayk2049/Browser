@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class DownloadEngine(
     val task: DownloadTask,
+    private val onSaveSegments: ((List<DownloadSegment>) -> Unit)? = null,
     private val onProgressUpdate: (DownloadTask) -> Unit
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -26,7 +27,6 @@ class DownloadEngine(
         speedLimitBytesPerSec = bytesPerSec
         task.speedLimitBytesPerSec = bytesPerSec
     }
-
     fun start() {
         if (task.status == DownloadStatus.DOWNLOADING) return
         isPaused.set(false)
@@ -52,9 +52,9 @@ class DownloadEngine(
         downloadJob?.cancel()
         task.status = DownloadStatus.PAUSED
         task.speedBytesPerSec = 0L
+        onSaveSegments?.invoke(task.segments)
         onProgressUpdate(task)
     }
-
     fun cancel() {
         isCanceled.set(true)
         downloadJob?.cancel()
@@ -71,7 +71,7 @@ class DownloadEngine(
         destFile.parentFile?.mkdirs()
 
         // 1. Probe server for file size and range capabilities
-        if (task.totalBytes <= 0) {
+        if (task.totalBytes <= 0 || task.segments.isEmpty()) {
             val headInfo = probeUrl(task.url)
             task.totalBytes = headInfo.contentLength
             if (headInfo.supportsRanges && task.totalBytes > 0) {

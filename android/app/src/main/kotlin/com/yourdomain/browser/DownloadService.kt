@@ -28,6 +28,7 @@ class DownloadService : Service() {
 
     private val binder = LocalBinder()
     private lateinit var notificationManager: NotificationManager
+    private lateinit var db: DownloadDatabase
 
     inner class LocalBinder : Binder() {
         fun getService(): DownloadService = this@DownloadService
@@ -38,30 +39,44 @@ class DownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        db = DownloadDatabase(applicationContext)
+        loadSavedTasks()
         createNotificationChannel()
         startAsForeground("Download Service", "Download engine running")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
+    private fun loadSavedTasks() {
+        for (t in db.loadAllTasks()) {
+            if (t.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING, DownloadStatus.QUEUED)) {
+                t.status = DownloadStatus.PAUSED
+                db.upsertTask(t)
+            }
+            allTasks[t.id] = t
+        }
+    }
+
     fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8) {
         val task = allTasks.getOrPut(taskId) {
             DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec)
         }
+        db.upsertTask(task)
         enqueueTask(task)
     }
 
     @Synchronized
     private fun enqueueTask(task: DownloadTask) {
-        val runningCount = activeEngines.values.count {
+        val running = activeEngines.values.count {
             it.task.status == DownloadStatus.DOWNLOADING || it.task.status == DownloadStatus.CONNECTING
         }
-        if (runningCount < maxConcurrentDownloads) {
+        if (running < maxConcurrentDownloads) {
             launchEngine(task)
         } else {
             task.status = DownloadStatus.QUEUED
             task.speedBytesPerSec = 0L
             if (!taskQueue.contains(task.id)) taskQueue.add(task.id)
+            db.upsertTask(task)
             onProgressCallback?.invoke(task)
         }
     }
@@ -69,10 +84,12 @@ class DownloadService : Service() {
     private fun launchEngine(task: DownloadTask) {
         taskQueue.remove(task.id)
         val engine = activeEngines.getOrPut(task.id) {
-            DownloadEngine(task) { updatedTask ->
-                updateNotification(updatedTask)
-                onProgressCallback?.invoke(updatedTask)
-                if (updatedTask.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) {
+            DownloadEngine(task, onSaveSegments = { segs -> db.saveSegments(task.id, segs) }) { updated ->
+                db.upsertTask(updated)
+                updateNotification(updated)
+                onProgressCallback?.invoke(updated)
+                if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) {
+                    db.saveSegments(updated.id, updated.segments)
                     processQueue()
                     checkAutoStop()
                 }
@@ -86,16 +103,16 @@ class DownloadService : Service() {
 
     @Synchronized
     private fun processQueue() {
-        val runningCount = activeEngines.values.count {
+        val running = activeEngines.values.count {
             it.task.status == DownloadStatus.DOWNLOADING || it.task.status == DownloadStatus.CONNECTING
         }
-        var slotsAvailable = maxConcurrentDownloads - runningCount
-        while (slotsAvailable > 0 && taskQueue.isNotEmpty()) {
+        var slots = maxConcurrentDownloads - running
+        while (slots > 0 && taskQueue.isNotEmpty()) {
             val nextId = taskQueue.poll() ?: break
-            val nextTask = allTasks[nextId]
-            if (nextTask != null && nextTask.status == DownloadStatus.QUEUED) {
-                launchEngine(nextTask)
-                slotsAvailable--
+            val next = allTasks[nextId]
+            if (next != null && next.status == DownloadStatus.QUEUED) {
+                launchEngine(next)
+                slots--
             }
         }
     }
@@ -106,6 +123,7 @@ class DownloadService : Service() {
         allTasks[taskId]?.let {
             if (it.status == DownloadStatus.QUEUED) {
                 it.status = DownloadStatus.PAUSED
+                db.upsertTask(it)
                 onProgressCallback?.invoke(it)
             }
         }
@@ -120,6 +138,7 @@ class DownloadService : Service() {
         taskQueue.remove(taskId)
         activeEngines.remove(taskId)?.cancel()
         allTasks.remove(taskId)
+        db.deleteTask(taskId)
         processQueue()
     }
 
@@ -128,6 +147,7 @@ class DownloadService : Service() {
         allTasks.values.forEach { task ->
             if (task.status == DownloadStatus.QUEUED) {
                 task.status = DownloadStatus.PAUSED
+                db.upsertTask(task)
                 onProgressCallback?.invoke(task)
             }
         }
@@ -147,11 +167,11 @@ class DownloadService : Service() {
         val limit = bytesPerSec.coerceAtLeast(0L)
         if (taskId != null) {
             activeEngines[taskId]?.setSpeedLimit(limit)
-            allTasks[taskId]?.speedLimitBytesPerSec = limit
+            allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         } else {
             globalSpeedLimitBytesPerSec = limit
             activeEngines.values.forEach { it.setSpeedLimit(limit) }
-            allTasks.values.forEach { it.speedLimitBytesPerSec = limit }
+            allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         }
     }
 
@@ -159,18 +179,14 @@ class DownloadService : Service() {
         val hasActive = activeEngines.values.any {
             it.task.status == DownloadStatus.DOWNLOADING || it.task.status == DownloadStatus.CONNECTING
         }
-        if (!hasActive && taskQueue.isEmpty()) {
-            stopForeground(STOP_FOREGROUND_DETACH)
-        }
+        if (!hasActive && taskQueue.isEmpty()) stopForeground(STOP_FOREGROUND_DETACH)
     }
 
     private fun startAsForeground(title: String, text: String) {
-        val notification = buildNotification(title, text, 0, 0)
+        val n = buildNotification(title, text, 0, 0)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else startForeground(NOTIFICATION_ID, n)
     }
 
     private fun updateNotification(task: DownloadTask) {
@@ -182,7 +198,7 @@ class DownloadService : Service() {
             DownloadStatus.QUEUED -> "Queued"
             DownloadStatus.PAUSED -> "Paused • $percent%"
             DownloadStatus.COMPLETED -> "Completed"
-            DownloadStatus.FAILED -> "Failed: ${task.errorMessage ?: "Unknown error"}"
+            DownloadStatus.FAILED -> "Failed: ${task.errorMessage ?: "Error"}"
             else -> task.status.name
         }
         notificationManager.notify(NOTIFICATION_ID, buildNotification(fileName, statusText, 100, percent))
@@ -202,10 +218,10 @@ class DownloadService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Shows progress of active multi-threaded downloads" }
-            notificationManager.createNotificationChannel(channel)
+            val c = NotificationChannel(CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shows progress of active multi-threaded downloads"
+            }
+            notificationManager.createNotificationChannel(c)
         }
     }
 }
