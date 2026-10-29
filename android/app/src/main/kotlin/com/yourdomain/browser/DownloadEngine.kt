@@ -37,11 +37,11 @@ class DownloadEngine(
         downloadJob = scope.launch {
             try {
                 executeDownload()
-            } catch (e: CancellationException) {
-                // Normal coroutine cancellation
+            } catch (_: CancellationException) {
             } catch (e: Exception) {
                 task.status = DownloadStatus.FAILED
-                task.errorMessage = e.message ?: "Unknown download error"
+                task.errorMessage = e.message ?: "Download failed"
+                task.speedBytesPerSec = 0L
                 onProgressUpdate(task)
             }
         }
@@ -60,8 +60,8 @@ class DownloadEngine(
         downloadJob?.cancel()
         task.status = DownloadStatus.CANCELED
         task.speedBytesPerSec = 0L
-        val partFile = File("${task.destinationPath}.part")
-        if (partFile.exists()) partFile.delete()
+        val part = File("${task.destinationPath}.part")
+        if (part.exists()) part.delete()
         onProgressUpdate(task)
     }
 
@@ -70,17 +70,16 @@ class DownloadEngine(
         val partFile = File("${task.destinationPath}.part")
         destFile.parentFile?.mkdirs()
 
-        // 1. Probe server for file size and range capabilities if not yet known
+        // 1. Probe server for file size and range capabilities
         if (task.totalBytes <= 0) {
             val headInfo = probeUrl(task.url)
             task.totalBytes = headInfo.contentLength
-            val supportsRanges = headInfo.supportsRanges
-
-            if (supportsRanges && task.totalBytes > 0) {
+            if (headInfo.supportsRanges && task.totalBytes > 0) {
                 partitionSegments(task.totalBytes, task.segmentsCount)
             } else {
                 task.segments.clear()
-                task.segments.add(DownloadSegment(0, 0, if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE))
+                val end = if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE
+                task.segments.add(DownloadSegment(0, 0, end))
             }
         }
 
@@ -92,19 +91,27 @@ class DownloadEngine(
         task.status = DownloadStatus.DOWNLOADING
         onProgressUpdate(task)
 
-        // 2. Start speed tracker loop
         val speedTracker = launch { trackSpeed() }
-
         try {
-            // 3. Download each segment concurrently
-            val segmentJobs = task.segments.map { segment ->
-                launch {
-                    if (!segment.isFinished && !isPaused.get() && !isCanceled.get()) {
-                        downloadSegment(segment, raf)
+            try {
+                val segmentJobs = task.segments.map { segment ->
+                    launch {
+                        if (!segment.isFinished && !isPaused.get() && !isCanceled.get()) {
+                            downloadSegment(segment, raf)
+                        }
                     }
                 }
+                segmentJobs.joinAll()
+            } catch (e: Exception) {
+                if (e.message?.contains("429") == true && !isPaused.get() && !isCanceled.get()) {
+                    delay(1200)
+                    task.segments.clear()
+                    val end = if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE
+                    val fallback = DownloadSegment(0, 0, end, downloadedBytes = task.downloadedBytes)
+                    task.segments.add(fallback)
+                    downloadSegment(fallback, raf)
+                } else throw e
             }
-            segmentJobs.joinAll()
 
             if (!isPaused.get() && !isCanceled.get()) {
                 raf.close()
@@ -123,28 +130,16 @@ class DownloadEngine(
     private fun downloadSegment(segment: DownloadSegment, raf: RandomAccessFile) {
         val currentStart = segment.startByte + segment.downloadedBytes
         if (segment.endByte != Long.MAX_VALUE && currentStart > segment.endByte) return
-
-        val connection = (URL(task.url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 30000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0")
-            if (task.segments.size > 1 || segment.endByte != Long.MAX_VALUE) {
-                val rangeHeader = if (segment.endByte != Long.MAX_VALUE) "bytes=$currentStart-${segment.endByte}" else "bytes=$currentStart-"
-                setRequestProperty("Range", rangeHeader)
-            }
+        val rangeHeader = if (segment.endByte != Long.MAX_VALUE) "bytes=$currentStart-${segment.endByte}" else if (currentStart > 0) "bytes=$currentStart-" else null
+        val conn = openConnection(task.url, rangeHeader)
+        val code = conn.responseCode
+        if (code !in 200..206) {
+            conn.disconnect()
+            throw Exception("HTTP $code ${conn.responseMessage ?: ""}".trim())
         }
-
-        connection.connect()
-        val responseCode = connection.responseCode
-        if (responseCode !in 200..206) {
-            throw Exception("HTTP Error $responseCode loading segment ${segment.index}")
-        }
-
-        val input: InputStream = connection.inputStream
+        val input: InputStream = conn.inputStream
         val buffer = ByteArray(32 * 1024)
         var bytesRead: Int
-
         try {
             while (input.read(buffer).also { bytesRead = it } != -1) {
                 if (isPaused.get() || isCanceled.get()) break
@@ -158,8 +153,33 @@ class DownloadEngine(
             }
         } finally {
             try { input.close() } catch (_: Exception) {}
-            connection.disconnect()
+            conn.disconnect()
         }
+    }
+
+    private fun openConnection(urlStr: String, rangeHeader: String? = null, method: String = "GET"): HttpURLConnection {
+        var current = urlStr
+        for (i in 0 until 8) {
+            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 15000
+                readTimeout = 30000
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0")
+                setRequestProperty("Accept", "*/*")
+                if (rangeHeader != null) setRequestProperty("Range", rangeHeader)
+            }
+            conn.connect()
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val loc = conn.getHeaderField("Location") ?: break
+                current = if (loc.startsWith("http")) loc else URL(URL(current), loc).toString()
+                conn.disconnect()
+                continue
+            }
+            return conn
+        }
+        return (URL(current).openConnection() as HttpURLConnection)
     }
 
     private fun throttleBandwidth(bytesRead: Int) {
@@ -169,16 +189,12 @@ class DownloadEngine(
             bytesInWindow += bytesRead
             val now = System.currentTimeMillis()
             val elapsed = now - lastThrottleTime
-            if (elapsed < 1000) {
-                if (bytesInWindow >= limit) {
-                    val waitMs = 1000 - elapsed
-                    if (waitMs > 0) {
-                        try { Thread.sleep(waitMs) } catch (_: Exception) {}
-                    }
-                    bytesInWindow = 0L
-                    lastThrottleTime = System.currentTimeMillis()
-                }
-            } else {
+            if (elapsed < 1000 && bytesInWindow >= limit) {
+                val waitMs = 1000 - elapsed
+                if (waitMs > 0) try { Thread.sleep(waitMs) } catch (_: Exception) {}
+                bytesInWindow = 0L
+                lastThrottleTime = System.currentTimeMillis()
+            } else if (elapsed >= 1000) {
                 bytesInWindow = 0L
                 lastThrottleTime = now
             }
@@ -186,13 +202,8 @@ class DownloadEngine(
     }
 
     private fun recalculateTotalDownloaded() {
-        var sum = 0L
-        for (seg in task.segments) {
-            sum += seg.downloadedBytes
-        }
-        task.downloadedBytes = sum
+        task.downloadedBytes = task.segments.sumOf { it.downloadedBytes }
     }
-
     private suspend fun trackSpeed() {
         var lastBytes = task.downloadedBytes
         var lastTime = System.currentTimeMillis()
@@ -201,44 +212,38 @@ class DownloadEngine(
             val now = System.currentTimeMillis()
             val currentBytes = task.downloadedBytes
             val elapsedSec = (now - lastTime) / 1000.0
-            if (elapsedSec > 0) {
-                task.speedBytesPerSec = ((currentBytes - lastBytes) / elapsedSec).toLong().coerceAtLeast(0L)
-            }
+            if (elapsedSec > 0) task.speedBytesPerSec = ((currentBytes - lastBytes) / elapsedSec).toLong().coerceAtLeast(0L)
             lastBytes = currentBytes
             lastTime = now
-            if (task.status == DownloadStatus.DOWNLOADING) {
-                onProgressUpdate(task)
-            }
+            if (task.status == DownloadStatus.DOWNLOADING) onProgressUpdate(task)
         }
     }
 
     private fun partitionSegments(total: Long, count: Int) {
         task.segments.clear()
-        val actualCount = count.coerceIn(1, 16)
-        val chunkSize = total / actualCount
-        for (i in 0 until actualCount) {
+        val effectiveCount = if (total < 5 * 1024 * 1024) 1 else count.coerceIn(1, 16)
+        val chunkSize = total / effectiveCount
+        for (i in 0 until effectiveCount) {
             val start = i * chunkSize
-            val end = if (i == actualCount - 1) total - 1 else (start + chunkSize - 1)
+            val end = if (i == effectiveCount - 1) total - 1 else (start + chunkSize - 1)
             task.segments.add(DownloadSegment(i, start, end))
         }
     }
 
     private data class HeadInfo(val contentLength: Long, val supportsRanges: Boolean)
 
-    private fun probeUrl(urlString: String): HeadInfo {
-        val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
-            requestMethod = "HEAD"
-            connectTimeout = 15000
-            readTimeout = 15000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0")
+    private fun probeUrl(urlString: String): HeadInfo = try {
+        val conn = openConnection(urlString, method = "HEAD")
+        if (conn.responseCode in 200..299) {
+            val len = conn.contentLengthLong
+            val supports = conn.getHeaderField("Accept-Ranges")?.contains("bytes", true) == true
+            conn.disconnect()
+            HeadInfo(len, supports)
+        } else {
+            conn.disconnect()
+            HeadInfo(-1L, false)
         }
-        conn.connect()
-        val length = conn.contentLengthLong
-        val ranges = conn.getHeaderField("Accept-Ranges")
-        val supports = ranges != null && ranges.contains("bytes", ignoreCase = true)
-        conn.disconnect()
-        return HeadInfo(length, supports)
+    } catch (_: Exception) {
+        HeadInfo(-1L, false)
     }
 }
-
