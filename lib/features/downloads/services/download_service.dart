@@ -55,12 +55,14 @@ class DownloadService {
     );
   }
 
-  /// Starts a new multi-threaded parallel download on the native Android Foreground Service.
+  /// Starts a new multi-threaded parallel download or adds it queued/paused.
   Future<bool> startDownload({
     required String taskId,
     required String url,
     required String destinationPath,
     int segmentsCount = 8,
+    bool startNow = true,
+    String? referer,
   }) async {
     try {
       final success = await _methodChannel.invokeMethod<bool>(
@@ -70,12 +72,30 @@ class DownloadService {
           'url': url,
           'destinationPath': destinationPath,
           'segmentsCount': segmentsCount,
+          'startNow': startNow,
+          if (referer != null) 'referer': referer,
         },
       );
       return success ?? false;
     } on PlatformException catch (e) {
       developer.log('Failed to start download: ${e.message}', name: 'Downloader', error: e);
       return false;
+    }
+  }
+
+  /// Queries Android StatFs for available and total storage space.
+  Future<Map<String, int>> getDiskSpace([String? path]) async {
+    try {
+      final res = await _methodChannel.invokeMapMethod<String, dynamic>(
+        'getDiskSpace',
+        path != null ? {'path': path} : null,
+      );
+      return {
+        'available': (res?['available'] as num?)?.toInt() ?? 0,
+        'total': (res?['total'] as num?)?.toInt() ?? 0,
+      };
+    } catch (_) {
+      return {'available': 0, 'total': 0};
     }
   }
 

@@ -5,8 +5,8 @@ import java.io.File
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random
 
 class DownloadEngine(
     val task: DownloadTask,
@@ -45,18 +45,14 @@ class DownloadEngine(
     }
 
     fun pause() {
-        isPaused.set(true)
-        downloadJob?.cancel()
-        task.status = DownloadStatus.PAUSED
-        task.speedBytesPerSec = 0L
-        onSaveSegments?.invoke(task.segments)
-        onProgressUpdate(task)
+        isPaused.set(true); downloadJob?.cancel()
+        task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L
+        onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
     }
+
     fun cancel() {
-        isCanceled.set(true)
-        downloadJob?.cancel()
-        task.status = DownloadStatus.CANCELED
-        task.speedBytesPerSec = 0L
+        isCanceled.set(true); downloadJob?.cancel()
+        task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
         val part = File("${task.destinationPath}.part")
         if (part.exists()) part.delete()
         onProgressUpdate(task)
@@ -67,11 +63,19 @@ class DownloadEngine(
         val partFile = File("${task.destinationPath}.part")
         destFile.parentFile?.mkdirs()
 
-        // 1. Probe server for file size and range capabilities
-        if (task.totalBytes <= 0 || task.segments.isEmpty()) {
-            val headInfo = probeUrl(task.url)
-            task.totalBytes = headInfo.contentLength
-            if (headInfo.supportsRanges && task.totalBytes > 0) {
+        // 1. Single pre-flight request (resolves final URL, Content-Range size & Content-Type)
+        if (task.totalBytes <= 0 || task.segments.isEmpty() || task.finalUrl == null) {
+            val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer)
+            task.finalUrl = probe.finalUrl
+            task.resolvedContentType = probe.contentType
+            if (task.totalBytes <= 0 && probe.contentLength > 0) task.totalBytes = probe.contentLength
+
+            // Intercept HTML error/preview pages (e.g. Drive viewer or expired token page)
+            val isHtml = probe.contentType?.contains("text/html") == true
+            val isExpectedHtml = task.destinationPath.endsWith(".html", true) || task.destinationPath.endsWith(".htm", true)
+            if (isHtml && !isExpectedHtml) throw Exception("Server returned a webpage instead of a file. The link may have expired or requires login.")
+
+            if (probe.supportsRanges && task.totalBytes > 0) {
                 partitionSegments(task.totalBytes, task.segmentsCount)
             } else {
                 task.segments.clear()
@@ -90,33 +94,31 @@ class DownloadEngine(
 
         val speedTracker = launch { trackSpeed() }
         try {
-            try {
-                val segmentJobs = task.segments.map { segment ->
-                    launch {
-                        if (!segment.isFinished && !isPaused.get() && !isCanceled.get()) {
-                            downloadSegment(segment, raf)
-                        }
+            supervisorScope {
+                // Connection ladder: start worker 0, then stagger siblings by 750ms if range supported
+                val activeJobs = mutableListOf<Job>()
+                for ((idx, segment) in task.segments.withIndex()) {
+                    if (segment.isFinished || isPaused.get() || isCanceled.get()) continue
+                    if (idx > 0) delay(750L) // Ladder connection to avoid sudden socket burst
+                    if (isPaused.get() || isCanceled.get()) break
+                    val job = launch {
+                        downloadSegmentWithRetry(segment, raf)
                     }
+                    activeJobs.add(job)
                 }
-                segmentJobs.joinAll()
-            } catch (e: Exception) {
-                if (e.message?.contains("429") == true && !isPaused.get() && !isCanceled.get()) {
-                    delay(1200)
-                    task.segments.clear()
-                    val end = if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE
-                    val fallback = DownloadSegment(0, 0, end, downloadedBytes = task.downloadedBytes)
-                    task.segments.add(fallback)
-                    downloadSegment(fallback, raf)
-                } else throw e
+                activeJobs.joinAll()
             }
 
             if (!isPaused.get() && !isCanceled.get()) {
-                raf.close()
-                if (destFile.exists()) destFile.delete()
-                partFile.renameTo(destFile)
-                task.status = DownloadStatus.COMPLETED
-                task.speedBytesPerSec = 0L
-                onProgressUpdate(task)
+                val allFinished = task.segments.all { it.isFinished } || (task.totalBytes > 0 && task.downloadedBytes >= task.totalBytes)
+                if (allFinished) {
+                    raf.close()
+                    if (destFile.exists()) destFile.delete()
+                    partFile.renameTo(destFile)
+                    task.status = DownloadStatus.COMPLETED
+                    task.speedBytesPerSec = 0L
+                    onProgressUpdate(task)
+                }
             }
         } finally {
             speedTracker.cancel()
@@ -124,16 +126,50 @@ class DownloadEngine(
         }
     }
 
+    private suspend fun downloadSegmentWithRetry(segment: DownloadSegment, raf: RandomAccessFile) {
+        var attempts = 0
+        val maxAttempts = 5
+        while (attempts < maxAttempts && !isPaused.get() && !isCanceled.get() && !segment.isFinished) {
+            try {
+                downloadSegment(segment, raf)
+                return
+            } catch (e: Exception) {
+                if (isPaused.get() || isCanceled.get()) return
+                attempts++
+                val msg = e.message ?: ""
+                val is429 = msg.contains("429")
+                val isRetryable = is429 || msg.contains("503") || msg.contains("504") || msg.contains("408") || msg.contains("timeout", true)
+                if (!isRetryable || attempts >= maxAttempts) throw e
+
+                // Parse Retry-After or apply exponential backoff with jitter
+                val retryAfterMs = DownloadHttpHelper.parseRetryAfter(e.message?.substringAfter("Retry-After:", "")?.trim())
+                val backoff = retryAfterMs ?: ((2000L * (1 shl (attempts - 1))) + Random.nextLong(200, 800))
+                delay(backoff.coerceIn(1000L, 60000L))
+            }
+        }
+    }
+
     private fun downloadSegment(segment: DownloadSegment, raf: RandomAccessFile) {
         val currentStart = segment.startByte + segment.downloadedBytes
         if (segment.endByte != Long.MAX_VALUE && currentStart > segment.endByte) return
         val rangeHeader = if (segment.endByte != Long.MAX_VALUE) "bytes=$currentStart-${segment.endByte}" else if (currentStart > 0) "bytes=$currentStart-" else null
-        val conn = openConnection(task.url, rangeHeader)
+        
+        // Use resolved direct CDN URL so the token/redirect gateway is never replayed
+        val targetUrl = task.finalUrl ?: task.url
+        val conn = DownloadHttpHelper.openConnection(targetUrl, rangeHeader = rangeHeader, referer = task.referer)
         val code = conn.responseCode
-        if (code !in 200..206) {
+
+        // Strict HTTP 206 vs 200 validation
+        if (rangeHeader != null && code == 200 && segment.index > 0) {
             conn.disconnect()
-            throw Exception("HTTP $code ${conn.responseMessage ?: ""}".trim())
+            throw Exception("Server does not support ranges (HTTP 200 on chunk ${segment.index})")
         }
+        if (!DownloadHttpHelper.validateRangeResponse(conn, currentStart, rangeHeader != null)) {
+            val retryHeader = conn.getHeaderField("Retry-After")
+            conn.disconnect()
+            throw Exception("HTTP $code ${conn.responseMessage ?: ""} ${if (retryHeader != null) "Retry-After:$retryHeader" else ""}".trim())
+        }
+
         val input: InputStream = conn.inputStream
         val buffer = ByteArray(32 * 1024)
         var bytesRead: Int
@@ -153,31 +189,6 @@ class DownloadEngine(
             try { input.close() } catch (_: Exception) {}
             conn.disconnect()
         }
-    }
-
-    private fun openConnection(urlStr: String, rangeHeader: String? = null, method: String = "GET"): HttpURLConnection {
-        var current = urlStr
-        for (i in 0 until 8) {
-            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
-                connectTimeout = 15000
-                readTimeout = 30000
-                instanceFollowRedirects = false
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0")
-                setRequestProperty("Accept", "*/*")
-                if (rangeHeader != null) setRequestProperty("Range", rangeHeader)
-            }
-            conn.connect()
-            val code = conn.responseCode
-            if (code in 300..399) {
-                val loc = conn.getHeaderField("Location") ?: break
-                current = if (loc.startsWith("http")) loc else URL(URL(current), loc).toString()
-                conn.disconnect()
-                continue
-            }
-            return conn
-        }
-        return (URL(current).openConnection() as HttpURLConnection)
     }
 
     private fun throttleBandwidth(bytesRead: Int) {
@@ -202,6 +213,7 @@ class DownloadEngine(
     private fun recalculateTotalDownloaded() {
         task.downloadedBytes = task.segments.sumOf { it.downloadedBytes }
     }
+
     private suspend fun trackSpeed() {
         var lastBytes = task.downloadedBytes
         var lastTime = System.currentTimeMillis()
@@ -219,29 +231,13 @@ class DownloadEngine(
 
     private fun partitionSegments(total: Long, count: Int) {
         task.segments.clear()
-        val effectiveCount = if (total < 5 * 1024 * 1024) 1 else count.coerceIn(1, 16)
+        // Default cap 4 for safety, up to count
+        val effectiveCount = if (total < 5 * 1024 * 1024) 1 else count.coerceIn(1, 6)
         val chunkSize = total / effectiveCount
         for (i in 0 until effectiveCount) {
             val start = i * chunkSize
             val end = if (i == effectiveCount - 1) total - 1 else (start + chunkSize - 1)
             task.segments.add(DownloadSegment(i, start, end))
         }
-    }
-
-    private data class HeadInfo(val contentLength: Long, val supportsRanges: Boolean)
-
-    private fun probeUrl(urlString: String): HeadInfo = try {
-        val conn = openConnection(urlString, method = "HEAD")
-        if (conn.responseCode in 200..299) {
-            val len = conn.contentLengthLong
-            val supports = conn.getHeaderField("Accept-Ranges")?.contains("bytes", true) == true
-            conn.disconnect()
-            HeadInfo(len, supports)
-        } else {
-            conn.disconnect()
-            HeadInfo(-1L, false)
-        }
-    } catch (_: Exception) {
-        HeadInfo(-1L, false)
     }
 }

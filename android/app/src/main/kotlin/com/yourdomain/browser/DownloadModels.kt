@@ -35,6 +35,9 @@ data class DownloadTask(
     val isTorrent: Boolean = false,
     @Volatile var seeders: Int = 0,
     @Volatile var leechers: Int = 0,
+    @Volatile var finalUrl: String? = null,
+    @Volatile var resolvedContentType: String? = null,
+    @Volatile var referer: String? = null,
     val segments: MutableList<DownloadSegment> = mutableListOf()
 ) {
     val progress: Double
@@ -61,7 +64,10 @@ data class DownloadTask(
             "errorMessage" to errorMessage,
             "isTorrent" to isTorrent,
             "seeders" to seeders,
-            "leechers" to leechers
+            "leechers" to leechers,
+            "finalUrl" to finalUrl,
+            "resolvedContentType" to resolvedContentType,
+            "referer" to referer
         )
     }
 }

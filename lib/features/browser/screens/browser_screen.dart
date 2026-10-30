@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../config/env.dart';
 import '../../../theme/tokens/app_radius.dart';
@@ -61,94 +60,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  bool _isPromptingDownload = false;
+
   Future<void> _promptDownload(Uri uri) async {
     final urlStr = uri.toString();
-    final isMagnet = urlStr.startsWith('magnet:?');
-    final fileName = isMagnet
-        ? (uri.queryParameters['dn'] ?? 'Torrent Download')
-        : (uri.pathSegments.lastOrNull ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
-
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal)),
-      ),
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return Padding(
-          padding: const EdgeInsets.all(AppSpacing.x6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isMagnet ? PhosphorIcons.shareNetwork : PhosphorIcons.downloadSimple,
-                    color: cs.primary,
-                    size: 28,
-                  ),
-                  const SizedBox(width: AppSpacing.x2),
-                  Text(
-                    isMagnet ? 'Start BitTorrent Download?' : 'Start High-Speed Download?',
-                    style: AppTypography.displaySm,
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.x2),
-              Text(fileName, style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: AppSpacing.x1),
-              Text(
-                isMagnet
-                    ? 'Connects to P2P peer swarm and DHT trackers.'
-                    : 'Uses 8 parallel connections with native speed boost.',
-                style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: AppSpacing.x6),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.x3),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Download'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (confirmed == true && mounted) {
-      final dir = await getApplicationDocumentsDirectory();
-      final destPath = '${dir.path}/$fileName';
-      final taskId = DateTime.now().millisecondsSinceEpoch.toString();
-      await DownloadService().startDownload(
-        taskId: taskId,
-        url: uri.toString(),
-        destinationPath: destPath,
-        segmentsCount: 8,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Downloading $fileName...'),
-            action: SnackBarAction(
-              label: 'View',
-              onPressed: () => context.push('/downloads'),
-            ),
-          ),
-        );
-      }
+    if (_isPromptingDownload) return;
+    _isPromptingDownload = true;
+    try {
+      if (mounted) await AddDownloadDialog.show(context, initialUrl: urlStr);
+    } finally {
+      _isPromptingDownload = false;
     }
   }
 

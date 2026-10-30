@@ -45,9 +45,7 @@ class DownloadService : Service() {
     private lateinit var notificationManager: NotificationManager
     private lateinit var db: DownloadDatabase
 
-    inner class LocalBinder : Binder() {
-        fun getService(): DownloadService = this@DownloadService
-    }
+    inner class LocalBinder : Binder() { fun getService(): DownloadService = this@DownloadService }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -82,27 +80,33 @@ class DownloadService : Service() {
         }
     }
 
-    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8) {
+    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null) {
         val isTor = TorrentEngine.isMagnetOrTorrent(url)
         val task = allTasks.getOrPut(taskId) {
-            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor)
+            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer)
         }
-        db.upsertTask(task)
-        enqueueTask(task)
+        if (referer != null) task.referer = referer
+        if (startNow) { db.upsertTask(task); enqueueTask(task) } else {
+            task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
+        }
     }
+
+    private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
 
     @Synchronized
     private fun enqueueTask(task: DownloadTask) {
         val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } +
                 activeTorrentEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
-        if (running < maxConcurrentDownloads) {
+        val host = getHost(task.finalUrl ?: task.url)
+        val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count {
+            it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host
+        }
+        if (running < maxConcurrentDownloads && hostRunning < 2) {
             launchEngine(task)
         } else {
-            task.status = DownloadStatus.QUEUED
-            task.speedBytesPerSec = 0L
+            task.status = DownloadStatus.QUEUED; task.speedBytesPerSec = 0L
             if (!taskQueue.contains(task.id)) taskQueue.add(task.id)
-            db.upsertTask(task)
-            dispatchProgress(task, isStateChange = true)
+            db.upsertTask(task); dispatchProgress(task, isStateChange = true)
         }
     }
 
@@ -141,24 +145,28 @@ class DownloadService : Service() {
     private fun processQueue() {
         val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
         var slots = maxConcurrentDownloads - running
+        val delayed = mutableListOf<String>()
         while (slots > 0 && taskQueue.isNotEmpty()) {
             val nextId = taskQueue.poll() ?: break
             val next = allTasks[nextId]
             if (next != null && next.status == DownloadStatus.QUEUED) {
-                launchEngine(next)
-                slots--
+                val host = getHost(next.finalUrl ?: next.url)
+                val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count {
+                    it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host
+                }
+                if (hostRunning < 2) {
+                    launchEngine(next); slots--
+                } else delayed.add(nextId)
             }
         }
+        taskQueue.addAll(delayed)
     }
 
     fun pauseDownload(taskId: String) {
-        taskQueue.remove(taskId)
-        activeEngines[taskId]?.pause()
-        activeTorrentEngines[taskId]?.pause()
+        taskQueue.remove(taskId); activeEngines[taskId]?.pause(); activeTorrentEngines[taskId]?.pause()
         allTasks[taskId]?.let {
             if (it.status == DownloadStatus.QUEUED) {
-                it.status = DownloadStatus.PAUSED
-                db.upsertTask(it); dispatchProgress(it, isStateChange = true)
+                it.status = DownloadStatus.PAUSED; db.upsertTask(it); dispatchProgress(it, isStateChange = true)
             }
         }
         processQueue()
@@ -167,10 +175,8 @@ class DownloadService : Service() {
     fun resumeDownload(taskId: String) = allTasks[taskId]?.let { enqueueTask(it) }
 
     fun cancelDownload(taskId: String) {
-        taskQueue.remove(taskId)
-        val task = allTasks.remove(taskId)
-        activeEngines.remove(taskId)?.cancel()
-        activeTorrentEngines.remove(taskId)?.cancel()
+        taskQueue.remove(taskId); val task = allTasks.remove(taskId)
+        activeEngines.remove(taskId)?.cancel(); activeTorrentEngines.remove(taskId)?.cancel()
         task?.let { it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true) }
         db.deleteTask(taskId); processQueue()
     }
@@ -182,8 +188,7 @@ class DownloadService : Service() {
                 task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
             }
         }
-        activeEngines.values.forEach { it.pause() }
-        activeTorrentEngines.values.forEach { it.pause() }
+        activeEngines.values.forEach { it.pause() }; activeTorrentEngines.values.forEach { it.pause() }
     }
 
     fun resumeAll() = allTasks.values.filter { it.status == DownloadStatus.PAUSED }.forEach { enqueueTask(it) }
@@ -221,23 +226,14 @@ class DownloadService : Service() {
         val name = File(task.destinationPath).name
         val pct = (task.progress * 100).toInt()
         val mb = String.format("%.2f", task.speedBytesPerSec / (1024.0 * 1024.0))
-        val statusText = when (task.status) {
-            DownloadStatus.DOWNLOADING -> "$pct% • $mb MB/s"
-            DownloadStatus.QUEUED -> "Queued"
-            DownloadStatus.PAUSED -> "Paused • $pct%"
-            DownloadStatus.COMPLETED -> "Completed"
-            DownloadStatus.FAILED -> "Failed: ${task.errorMessage ?: "Error"}"
-            else -> task.status.name
-        }
+        val statusText = if (task.status == DownloadStatus.DOWNLOADING) "$pct% • $mb MB/s" else task.status.name
         notificationManager.notify(NOTIFICATION_ID, buildNotification(name, statusText, 100, pct))
     }
 
     private fun buildNotification(title: String, text: String, max: Int, progress: Int): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title).setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(max > 0 && progress < max).setProgress(max, progress, max == 0)
-            .setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
+        return NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle(title).setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(max > 0 && progress < max)
+            .setProgress(max, progress, max == 0).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
     }
 
     private fun createNotificationChannel() {

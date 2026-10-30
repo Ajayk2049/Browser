@@ -66,12 +66,23 @@ class MainActivity : FlutterActivity() {
                     val url = call.argument<String>("url") ?: ""
                     val destinationPath = call.argument<String>("destinationPath") ?: ""
                     val segmentsCount = call.argument<Int>("segmentsCount") ?: 8
+                    val startNow = call.argument<Boolean>("startNow") ?: true
+                    val referer = call.argument<String>("referer")
 
                     if (taskId.isNotEmpty() && url.isNotEmpty() && destinationPath.isNotEmpty()) {
-                        downloadService?.startDownload(taskId, url, destinationPath, segmentsCount)
+                        downloadService?.startDownload(taskId, url, destinationPath, segmentsCount, startNow, referer)
                         result.success(true)
                     } else {
                         result.error("INVALID_ARGS", "Missing required download arguments", null)
+                    }
+                }
+                "getDiskSpace" -> {
+                    val path = call.argument<String>("path") ?: getExternalFilesDir(null)?.path ?: filesDir.path
+                    try {
+                        val stat = android.os.StatFs(path)
+                        result.success(mapOf("available" to stat.availableBytes, "total" to stat.totalBytes))
+                    } catch (_: Exception) {
+                        result.success(mapOf("available" to 0L, "total" to 0L))
                     }
                 }
                 "pauseDownload" -> {

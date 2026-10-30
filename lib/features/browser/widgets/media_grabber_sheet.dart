@@ -35,13 +35,13 @@ class MediaGrabberSheet extends StatelessWidget {
 
     final dir = await getApplicationDocumentsDirectory();
     final destPath = '${dir.path}/$fileName';
-    final taskId = DateTime.now().millisecondsSinceEpoch.toString();
+    final taskId = '${DateTime.now().millisecondsSinceEpoch}_${DateTime.now().microsecond}';
 
     await DownloadService().startDownload(
       taskId: taskId,
       url: media.url,
       destinationPath: destPath,
-      segmentsCount: 8,
+      segmentsCount: 4,
     );
 
     if (context.mounted) {

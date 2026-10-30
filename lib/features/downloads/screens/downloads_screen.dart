@@ -1,15 +1,17 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
+import '../widgets/add_download_dialog.dart';
+import '../widgets/download_speed_dial_fab.dart';
+import '../widgets/download_task_card.dart';
 
-/// Material 3 Expressive Download Manager screen.
-/// Adheres strictly to rules.md §25.1, §25.2, §25.7, and §29.2 (< 300 lines).
+/// Material 3 Expressive Download Manager screen with 1DM+-style Speed Dial.
+/// Adheres strictly to rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 300 lines).
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
 
@@ -22,6 +24,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   final Map<String, DownloadTask> _tasks = {};
   StreamSubscription<DownloadTask>? _sub;
   bool _isLoading = true;
+  bool _isSpeedDialOpen = false;
 
   @override
   void initState() {
@@ -54,6 +57,43 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     super.dispose();
   }
 
+  void _handleAddLink() {
+    setState(() => _isSpeedDialOpen = false);
+    AddDownloadDialog.show(context);
+  }
+
+  Future<void> _handleFromClipboard() async {
+    setState(() => _isSpeedDialOpen = false);
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+
+    if (text.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Clipboard is empty')),
+        );
+      }
+      return;
+    }
+
+    final isLink = text.startsWith('http://') ||
+        text.startsWith('https://') ||
+        text.startsWith('magnet:?');
+
+    if (!isLink) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No valid download link found on clipboard')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      AddDownloadDialog.show(context, initialUrl: text);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -81,16 +121,59 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           const SizedBox(width: AppSpacing.x1),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : taskList.isEmpty
-              ? _buildEmptyState(colorScheme)
-              : ListView.separated(
-                  padding: const EdgeInsets.all(AppSpacing.x4),
-                  itemCount: taskList.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.x2),
-                  itemBuilder: (context, index) => _buildTaskCard(taskList[index], colorScheme),
+      body: Stack(
+        children: [
+          // 1. Download tasks list view or empty state
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : taskList.isEmpty
+                  ? _buildEmptyState(colorScheme)
+                  : ListView.separated(
+                      padding: const EdgeInsets.only(
+                        left: AppSpacing.x4,
+                        right: AppSpacing.x4,
+                        top: AppSpacing.x4,
+                        bottom: 88, // Clear space for the bottom FAB
+                      ),
+                      itemCount: taskList.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.x2),
+                      itemBuilder: (context, index) {
+                        final task = taskList[index];
+                        return DownloadTaskCard(
+                          task: task,
+                          onDelete: () {
+                            _service.cancelDownload(task.id);
+                            setState(() => _tasks.remove(task.id));
+                          },
+                        );
+                      },
+                    ),
+
+          // 2. Full-screen scrim overlay when speed dial is open
+          if (_isSpeedDialOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isSpeedDialOpen = false),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.35),
                 ),
+              ),
+            ),
+
+          // 3. Speed Dial FAB anchored firmly in bottom-right corner
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: DownloadSpeedDialFab(
+              isOpen: _isSpeedDialOpen,
+              onToggle: () => setState(() => _isSpeedDialOpen = !_isSpeedDialOpen),
+              onAddLink: _handleAddLink,
+              onFromClipboard: _handleFromClipboard,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -107,146 +190,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           const SizedBox(height: AppSpacing.x1),
           Text(
-            'Links downloaded from the browser will appear here',
+            'Tap + to add a link or copy from clipboard',
             style: AppTypography.bodySm.copyWith(color: colorScheme.onSurfaceVariant),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildTaskCard(DownloadTask task, ColorScheme colorScheme) {
-    final fileName = File(task.destinationPath).uri.pathSegments.lastOrNull ??
-        Uri.tryParse(task.url)?.pathSegments.lastOrNull ??
-        'download_${task.id}';
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.x4),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: colorScheme.outlineVariant.withAlpha(120)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIcons.fileArrowDown, color: colorScheme.primary, size: 24),
-              const SizedBox(width: AppSpacing.x2),
-              Expanded(
-                child: Text(
-                  fileName,
-                  style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              _buildStatusPill(task.status, colorScheme),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.x2),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            child: LinearProgressIndicator(
-              value: task.totalBytes > 0 ? task.progress : null,
-              minHeight: 6,
-              color: task.status == DownloadStatus.failed ? colorScheme.error : colorScheme.primary,
-              backgroundColor: colorScheme.surfaceContainerHighest,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.x1),
-          if (task.status == DownloadStatus.failed && task.errorMessage != null) ...[
-            Text(
-              task.errorMessage!,
-              style: AppTypography.bodySm.copyWith(color: colorScheme.error, fontSize: 11),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: AppSpacing.x1),
-          ],
-          Row(
-            children: [
-              Text(
-                '${task.progressPercentage} • ${task.speedFormatted}${task.status == DownloadStatus.downloading && task.etaSeconds > 0 ? " • ETA: ${task.etaFormatted}" : ""}${task.isTorrent ? " • S:${task.seeders} P:${task.leechers}" : ""}',
-                style: AppTypography.monoMd.copyWith(
-                  fontSize: 11,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              _buildActions(task, colorScheme),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusPill(DownloadStatus status, ColorScheme colorScheme) {
-    Color bg;
-    Color fg;
-    switch (status) {
-      case DownloadStatus.downloading:
-        bg = colorScheme.primaryContainer;
-        fg = colorScheme.onPrimaryContainer;
-        break;
-      case DownloadStatus.queued:
-      case DownloadStatus.connecting:
-      case DownloadStatus.pending:
-        bg = colorScheme.tertiaryContainer;
-        fg = colorScheme.onTertiaryContainer;
-        break;
-      case DownloadStatus.completed:
-        bg = colorScheme.secondaryContainer;
-        fg = colorScheme.onSecondaryContainer;
-        break;
-      case DownloadStatus.failed:
-        bg = colorScheme.errorContainer;
-        fg = colorScheme.onErrorContainer;
-        break;
-      case DownloadStatus.paused:
-      case DownloadStatus.canceled:
-        bg = colorScheme.surfaceContainerHighest;
-        fg = colorScheme.onSurfaceVariant;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x2, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(AppRadius.pill)),
-      child: Text(
-        status.name.toUpperCase(),
-        style: AppTypography.monoMd.copyWith(fontSize: 10, fontWeight: FontWeight.w700, color: fg),
-      ),
-    );
-  }
-
-  Widget _buildActions(DownloadTask task, ColorScheme colorScheme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (task.status == DownloadStatus.downloading || task.status == DownloadStatus.connecting)
-          IconButton(
-            icon: Icon(PhosphorIcons.pause, size: 20, color: colorScheme.onSurface),
-            tooltip: 'Pause',
-            onPressed: () => _service.pauseDownload(task.id),
-          )
-        else if (task.status == DownloadStatus.paused || task.status == DownloadStatus.queued)
-          IconButton(
-            icon: Icon(PhosphorIcons.play, size: 20, color: colorScheme.primary),
-            tooltip: 'Resume',
-            onPressed: () => _service.resumeDownload(task.id),
-          ),
-        IconButton(
-          icon: Icon(PhosphorIcons.trash, size: 20, color: colorScheme.error),
-          tooltip: 'Delete / Cancel',
-          onPressed: () {
-            _service.cancelDownload(task.id);
-            setState(() => _tasks.remove(task.id));
-          },
-        ),
-      ],
     );
   }
 }

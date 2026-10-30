@@ -62,12 +62,15 @@ class UrlHelper {
 
   /// Checks if the URL represents a downloadable binary or torrent resource.
   static bool isDownloadable(String urlStr) {
-    final lower = urlStr.toLowerCase();
-    if (lower.startsWith('magnet:?')) return true;
+    final trimmed = urlStr.trim();
+    if (trimmed.startsWith('magnet:?')) return true;
+    final uri = Uri.tryParse(trimmed);
+    final lastSegment = uri?.pathSegments.lastOrNull?.toLowerCase();
+    if (lastSegment == null || lastSegment.isEmpty) return false;
     const downloadExtensions = [
       '.apk', '.zip', '.rar', '.7z', '.tar', '.gz', '.bin', '.iso',
       '.mp4', '.mkv', '.avi', '.mp3', '.pdf', '.dmg', '.exe', '.torrent'
     ];
-    return downloadExtensions.any((ext) => lower.contains(ext));
+    return downloadExtensions.any((ext) => lastSegment.endsWith(ext));
   }
 }

@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 1) {
+class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -18,7 +18,10 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 downloaded_bytes INTEGER NOT NULL,
                 speed_limit INTEGER NOT NULL,
                 status TEXT NOT NULL,
-                error_message TEXT
+                error_message TEXT,
+                final_url TEXT,
+                content_type TEXT,
+                referer TEXT
             )
         """.trimIndent())
 
@@ -35,9 +38,11 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS segments")
-        db.execSQL("DROP TABLE IF EXISTS tasks")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN final_url TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN content_type TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN referer TEXT") } catch (_: Exception) {}
+        }
     }
 
     @Synchronized
@@ -53,6 +58,9 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
             put("speed_limit", task.speedLimitBytesPerSec)
             put("status", task.status.name)
             put("error_message", task.errorMessage)
+            put("final_url", task.finalUrl)
+            put("content_type", task.resolvedContentType)
+            put("referer", task.referer)
         }
         db.insertWithOnConflict("tasks", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -94,6 +102,9 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 val speedLimit = c.getLong(c.getColumnIndexOrThrow("speed_limit"))
                 val statusStr = c.getString(c.getColumnIndexOrThrow("status"))
                 val errorMsg = c.getString(c.getColumnIndexOrThrow("error_message"))
+                val finalUrl = c.getColumnIndex("final_url").takeIf { it >= 0 }?.let { c.getString(it) }
+                val contentType = c.getColumnIndex("content_type").takeIf { it >= 0 }?.let { c.getString(it) }
+                val referer = c.getColumnIndex("referer").takeIf { it >= 0 }?.let { c.getString(it) }
 
                 val status = try {
                     DownloadStatus.valueOf(statusStr)
@@ -110,7 +121,10 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                     downloadedBytes = downloadedBytes,
                     speedLimitBytesPerSec = speedLimit,
                     status = status,
-                    errorMessage = errorMsg
+                    errorMessage = errorMsg,
+                    finalUrl = finalUrl,
+                    resolvedContentType = contentType,
+                    referer = referer
                 )
 
                 // Load segments for this task
