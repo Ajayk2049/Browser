@@ -99,16 +99,23 @@ class DownloadService {
     }
   }
 
+  /// Probes URL directly via native engine (single source of truth for size & filename).
+  Future<Map<String, dynamic>?> probeUrl(String url, {String? referer}) async {
+    try {
+      return await _methodChannel.invokeMapMethod<String, dynamic>(
+        'probeUrl',
+        {'url': url, if (referer != null) 'referer': referer},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Pauses an active download, preserving downloaded segment offsets.
   Future<bool> pauseDownload(String taskId) async {
     try {
-      final success = await _methodChannel.invokeMethod<bool>(
-        'pauseDownload',
-        {'taskId': taskId},
-      );
-      return success ?? false;
-    } on PlatformException catch (e) {
-      developer.log('Failed to pause download: ${e.message}', name: 'Downloader', error: e);
+      return await _methodChannel.invokeMethod<bool>('pauseDownload', {'taskId': taskId}) ?? false;
+    } catch (_) {
       return false;
     }
   }
@@ -116,13 +123,8 @@ class DownloadService {
   /// Resumes a paused download from its existing byte offsets.
   Future<bool> resumeDownload(String taskId) async {
     try {
-      final success = await _methodChannel.invokeMethod<bool>(
-        'resumeDownload',
-        {'taskId': taskId},
-      );
-      return success ?? false;
-    } on PlatformException catch (e) {
-      developer.log('Failed to resume download: ${e.message}', name: 'Downloader', error: e);
+      return await _methodChannel.invokeMethod<bool>('resumeDownload', {'taskId': taskId}) ?? false;
+    } catch (_) {
       return false;
     }
   }
@@ -130,13 +132,8 @@ class DownloadService {
   /// Cancels an active download and cleans up temporary .part files.
   Future<bool> cancelDownload(String taskId) async {
     try {
-      final success = await _methodChannel.invokeMethod<bool>(
-        'cancelDownload',
-        {'taskId': taskId},
-      );
-      return success ?? false;
-    } on PlatformException catch (e) {
-      developer.log('Failed to cancel download: ${e.message}', name: 'Downloader', error: e);
+      return await _methodChannel.invokeMethod<bool>('cancelDownload', {'taskId': taskId}) ?? false;
+    } catch (_) {
       return false;
     }
   }

@@ -1,5 +1,8 @@
+import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import '../../../config/dio_client.dart';
+import '../../../config/env.dart';
+import '../services/download_service.dart';
 
 /// Resolved metadata from an HTTP probe or URI analysis.
 class UrlMetadata {
@@ -19,9 +22,10 @@ class UrlMetadata {
 
   String get formattedSize {
     if (totalBytes <= 0) return 'Unknown size';
-    if (totalBytes >= 1024 * 1024 * 1024) return '${(totalBytes / 1073741824).toStringAsFixed(2)} GB ($totalBytes bytes)';
-    if (totalBytes >= 1024 * 1024) return '${(totalBytes / 1048576).toStringAsFixed(2)} MB ($totalBytes bytes)';
-    return '${(totalBytes / 1024).toStringAsFixed(2)} KB ($totalBytes bytes)';
+    if (totalBytes >= (1 << 30)) return '${(totalBytes / (1 << 30)).toStringAsFixed(2)} GB ($totalBytes bytes)';
+    if (totalBytes >= (1 << 20)) return '${(totalBytes / (1 << 20)).toStringAsFixed(2)} MB ($totalBytes bytes)';
+    if (totalBytes >= (1 << 10)) return '${(totalBytes / (1 << 10)).toStringAsFixed(2)} KB ($totalBytes bytes)';
+    return '$totalBytes bytes';
   }
 }
 
@@ -35,11 +39,38 @@ class UrlMetadataHelper {
     if (trimmed.isEmpty) return _fallback('download');
     if (trimmed.startsWith('magnet:?')) return _resolveMagnet(trimmed);
 
+    final uri = Uri.tryParse(trimmed);
+    final ref = (referer?.isNotEmpty == true) ? referer : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}/' : null);
+
+    // 1. First attempt: Query native engine probe (single source of truth with DownloadEngine)
+    try {
+      final nativeRes = await DownloadService().probeUrl(trimmed, referer: ref);
+      if (nativeRes != null) {
+        final fUrl = (nativeRes['finalUrl'] as String?)?.isNotEmpty == true ? nativeRes['finalUrl'] as String : trimmed;
+        final cLen = (nativeRes['contentLength'] as num?)?.toInt() ?? -1;
+        final sName = nativeRes['suggestedFileName'] as String?;
+        final supRanges = nativeRes['supportsRanges'] as bool? ?? false;
+        final fUri = Uri.tryParse(fUrl) ?? uri;
+
+        final rawName = sName ?? (fUri != null ? (_parseQueryParams(fUri) ?? _parsePathSegment(fUri)) : null);
+        final cleanName = _cleanFileName(rawName ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
+        final ext = _extractExtension(cleanName);
+
+        if (Env.enableLogging) {
+          developer.log('NATIVE PROBE: url=$fUrl len=$cLen ranges=$supRanges name=$cleanName', name: 'Probe');
+        }
+        if (cLen > 0) {
+          return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
+        }
+        // Size unknown from the native probe: keep going so the Dart probe can try the HEAD rung.
+      }
+    } catch (e) {
+      if (Env.enableLogging) developer.log('Native probe fallback: $e', name: 'Probe');
+    }
+
+    // 2. Fallback: Refined Dart probe
     try {
       final dio = DioClient.instance;
-      final uri = Uri.tryParse(trimmed);
-      final ref = (referer?.isNotEmpty == true) ? referer : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}/' : null);
-
       final reqHeaders = <String, dynamic>{
         'Range': 'bytes=0-0',
         'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
@@ -52,7 +83,6 @@ class UrlMetadataHelper {
         options: Options(headers: reqHeaders, followRedirects: true, maxRedirects: 8, responseType: ResponseType.stream, validateStatus: (s) => s != null && s < 500),
       );
 
-      // Handle 429 Too Many Requests rate-limiting with Retry-After or backoff
       if (response.statusCode == 429) {
         final retrySec = int.tryParse(response.headers.value('retry-after') ?? '') ?? 3;
         await Future<void>.delayed(Duration(seconds: retrySec.clamp(1, 10)));
@@ -62,7 +92,6 @@ class UrlMetadataHelper {
         );
       }
 
-      // Immediately drain and release probe socket so connection budget isn't exhausted
       try {
         final body = response.data;
         if (body is ResponseBody) body.stream.listen(null).cancel();
@@ -70,6 +99,44 @@ class UrlMetadataHelper {
 
       final headers = response.headers;
       final finalUrl = response.realUri.toString();
+      final code = response.statusCode ?? 0;
+      final cr = headers.value('content-range');
+      final clRaw = int.tryParse(headers.value('content-length') ?? '') ?? -1;
+      int len = -1;
+
+      if (cr != null && cr.contains('/')) {
+        final total = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
+        if (total > 0) len = total; // Handles "bytes 0-0/N" and "bytes */N"
+      }
+      // A "bytes=0-0" probe body is exactly 1 byte, so any Content-Length above 1 means
+      // Range was ignored and the full body length was reported. Never trust the bare "1".
+      if (len <= 0 && (clRaw > 1 || code == 200)) len = clRaw;
+      if (code != 200 && code != 206 && code != 416) len = -1;
+
+      // Last rung: HEAD recovers servers/proxies that strip Content-Range on a 206.
+      if (len <= 0 && (code == 200 || code == 206 || code == 416)) {
+        try {
+          final head = await dio.head<dynamic>(
+            finalUrl,
+            options: Options(
+              headers: <String, dynamic>{
+                'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
+                'Accept': '*/*',
+                if (ref != null) 'Referer': ref,
+              },
+              followRedirects: true,
+              maxRedirects: 8,
+              validateStatus: (s) => s != null && s < 500,
+            ),
+          );
+          final hl = int.tryParse(head.headers.value('content-length') ?? '') ?? -1;
+          if (hl > 0) len = hl;
+        } catch (_) {}
+      }
+
+      if (Env.enableLogging) {
+        developer.log('PROBE $code len=$len cr=$cr cl=$clRaw', name: 'Probe');
+      }
 
       String? name = _parseContentDisposition(headers.value('content-disposition')) ??
           _parseQueryParams(response.realUri) ??
@@ -77,39 +144,12 @@ class UrlMetadataHelper {
 
       final cleanName = _cleanFileName(name ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
       final ext = _extractExtension(cleanName);
-
-      var len = -1;
-      final cr = headers.value('content-range');
-      if (cr != null && cr.contains('/')) {
-        len = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
-      }
-      if (len <= 0) {
-        final cl = int.tryParse(headers.value('content-length') ?? '') ?? -1;
-        if (response.statusCode != 206 || cl > 1) len = cl;
-      }
-
-      // If size is still unknown, query final direct CDN URL via lightweight HEAD
-      if (len <= 0) {
-        try {
-          final hRes = await dio.head<dynamic>(
-            finalUrl,
-            options: Options(
-              headers: {'User-Agent': reqHeaders['User-Agent'], if (ref != null) 'Referer': ref},
-              followRedirects: true, maxRedirects: 3, validateStatus: (s) => s != null && s < 400,
-            ),
-          );
-          final hcr = hRes.headers.value('content-range');
-          if (hcr != null && hcr.contains('/')) len = int.tryParse(hcr.substring(hcr.lastIndexOf('/') + 1).trim()) ?? -1;
-          if (len <= 0) len = int.tryParse(hRes.headers.value('content-length') ?? '') ?? -1;
-        } catch (_) {}
-      }
-
       final acceptRanges = headers.value('accept-ranges');
-      final resume = acceptRanges?.toLowerCase().contains('bytes') == true || headers.value('content-range') != null;
+      final resume = acceptRanges?.toLowerCase().contains('bytes') == true || cr != null;
 
       return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: len, supportsResume: resume, finalUrl: finalUrl);
-    } catch (_) {
-      final uri = Uri.tryParse(trimmed);
+    } catch (e) {
+      if (Env.enableLogging) developer.log('Probe exception for $trimmed: $e', name: 'Probe', error: e);
       final raw = uri?.pathSegments.lastOrNull;
       final name = (raw?.isNotEmpty == true) ? _cleanFileName(Uri.decodeComponent(raw!)) : 'download_${DateTime.now().millisecondsSinceEpoch}';
       return UrlMetadata(fileName: name, fileExtension: _extractExtension(name), totalBytes: -1, supportsResume: true, finalUrl: trimmed);

@@ -13,7 +13,15 @@ data class ProbeResult(
     val supportsRanges: Boolean,
     val contentType: String?,
     val suggestedFileName: String?
-)
+) {
+    fun toMap(): Map<String, Any?> = mapOf(
+        "finalUrl" to finalUrl,
+        "contentLength" to contentLength,
+        "supportsRanges" to supportsRanges,
+        "contentType" to contentType,
+        "suggestedFileName" to suggestedFileName
+    )
+}
 
 object DownloadHttpHelper {
     const val USER_AGENT = "Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0"
@@ -59,14 +67,19 @@ object DownloadHttpHelper {
         val conn = openConnection(urlStr, rangeHeader = "bytes=0-0", referer = referer, method = "GET")
         val finalUrl = conn.url.toString()
         val cType = conn.contentType?.lowercase(Locale.ROOT)
+        val code = conn.responseCode
         val cr = conn.getHeaderField("Content-Range")
-        val parsedLen = if (cr != null && cr.contains("/")) {
-            val total = cr.substringAfterLast("/").trim().toLongOrNull()
-            if (total != null && total > 0) total else (if (conn.responseCode != 206) conn.contentLengthLong else -1L)
-        } else {
-            if (conn.responseCode != 206) conn.contentLengthLong else -1L
+        val crTotal = cr?.substringAfterLast("/")?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+        val contentLen = conn.contentLengthLong
+        // Content-Length on a "bytes=0-0" probe is ambiguous only when it equals 1:
+        // any other value means Range was ignored and the whole body length was reported.
+        val parsedLen = when {
+            crTotal != null -> crTotal
+            code == 206 -> if (contentLen > 1) contentLen else -1L
+            code in 200..299 -> contentLen
+            else -> -1L
         }
-        val len = if (parsedLen <= 0 && conn.responseCode in 200..399) {
+        val len = if (parsedLen <= 0 && code in 200..399) {
             try {
                 val headConn = openConnection(finalUrl, referer = referer, method = "HEAD")
                 val hl = headConn.contentLengthLong
@@ -75,11 +88,11 @@ object DownloadHttpHelper {
             } catch (_: Exception) { parsedLen }
         } else parsedLen
 
-        val supportsRanges = conn.responseCode == 206 || conn.responseCode == 416 || conn.getHeaderField("Accept-Ranges")?.contains("bytes", true) == true
+        val supportsRanges = code == 206 || code == 416 || conn.getHeaderField("Accept-Ranges")?.contains("bytes", true) == true
         val cd = conn.getHeaderField("Content-Disposition")
         val fileName = parseContentDisposition(cd)
         try {
-            if (conn.responseCode in 200..299) conn.inputStream.close() else conn.errorStream?.close()
+            if (code in 200..299) conn.inputStream.close() else conn.errorStream?.close()
         } catch (_: Exception) {}
         conn.disconnect()
         ProbeResult(finalUrl, len, supportsRanges, cType, fileName)

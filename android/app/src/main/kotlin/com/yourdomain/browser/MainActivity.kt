@@ -14,6 +14,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
 
@@ -74,6 +75,18 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } else {
                         result.error("INVALID_ARGS", "Missing required download arguments", null)
+                    }
+                }
+                "probeUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    val referer = call.argument<String>("referer")
+                    if (url.isNotEmpty()) {
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            val probe = DownloadHttpHelper.probeUrl(url, referer)
+                            runOnUiThread { result.success(probe.toMap()) }
+                        }
+                    } else {
+                        result.error("INVALID_ARGS", "Missing url", null)
                     }
                 }
                 "getDiskSpace" -> {
