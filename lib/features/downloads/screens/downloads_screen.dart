@@ -168,9 +168,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           Row(
             children: [
               Text(
-                '${task.progressPercentage} • ${task.speedFormatted}',
+                '${task.progressPercentage} • ${task.speedFormatted}${task.status == DownloadStatus.downloading && task.etaSeconds > 0 ? " • ETA: ${task.etaFormatted}" : ""}${task.isTorrent ? " • S:${task.seeders} P:${task.leechers}" : ""}',
                 style: AppTypography.monoMd.copyWith(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),

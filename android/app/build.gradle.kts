@@ -39,3 +39,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation("org.mozilla.geckoview:geckoview:124.0.20240311145044")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+}

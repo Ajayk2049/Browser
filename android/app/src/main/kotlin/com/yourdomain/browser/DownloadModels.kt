@@ -32,10 +32,18 @@ data class DownloadTask(
     @Volatile var speedLimitBytesPerSec: Long = 0L,
     @Volatile var status: DownloadStatus = DownloadStatus.PENDING,
     @Volatile var errorMessage: String? = null,
+    val isTorrent: Boolean = false,
+    @Volatile var seeders: Int = 0,
+    @Volatile var leechers: Int = 0,
     val segments: MutableList<DownloadSegment> = mutableListOf()
 ) {
     val progress: Double
         get() = if (totalBytes > 0) (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0) else 0.0
+
+    val etaSeconds: Long
+        get() = if (speedBytesPerSec > 0 && totalBytes > downloadedBytes) {
+            (totalBytes - downloadedBytes) / speedBytesPerSec
+        } else 0L
 
     fun toMap(): Map<String, Any?> {
         return mapOf(
@@ -48,8 +56,12 @@ data class DownloadTask(
             "speedBytesPerSec" to speedBytesPerSec,
             "speedLimitBytesPerSec" to speedLimitBytesPerSec,
             "progress" to progress,
+            "etaSeconds" to etaSeconds,
             "status" to status.name.lowercase(),
-            "errorMessage" to errorMessage
+            "errorMessage" to errorMessage,
+            "isTorrent" to isTorrent,
+            "seeders" to seeders,
+            "leechers" to leechers
         )
     }
 }

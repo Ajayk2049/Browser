@@ -47,6 +47,12 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // Register Native GeckoView PlatformView Factory
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "com.yourdomain/geckoview",
+            GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger)
+        )
+
         // Ensure DownloadService is started and bound
         val intent = Intent(this, DownloadService::class.java)
         startService(intent)
@@ -89,6 +95,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "resumeAll" -> {
                     downloadService?.resumeAll()
+                    result.success(true)
+                }
+                "scheduleSeeding" -> {
+                    val taskId = call.argument<String>("taskId") ?: ""
+                    val wifiOnly = call.argument<Boolean>("wifiOnly") ?: true
+                    val requiresCharging = call.argument<Boolean>("requiresCharging") ?: true
+                    TorrentSeedingWorker.schedule(applicationContext, taskId, wifiOnly, requiresCharging)
+                    result.success(true)
+                }
+                "stopSeeding" -> {
+                    val taskId = call.argument<String>("taskId") ?: ""
+                    TorrentSeedingWorker.stop(applicationContext, taskId)
                     result.success(true)
                 }
                 "setMaxConcurrent" -> {

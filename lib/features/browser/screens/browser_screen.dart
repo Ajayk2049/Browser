@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_geckoview/webview_flutter_geckoview.dart';
 import '../../../config/env.dart';
 import '../../../theme/tokens/app_radius.dart';
-import '../../../theme/tokens/app_shapes.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../../downloads/downloads.dart';
+import '../models/search_engine.dart';
+import '../utils/url_helper.dart';
+import '../widgets/browser_address_bar.dart';
+import '../widgets/gecko_browser_view.dart';
+import '../widgets/media_grabber_sheet.dart';
 
-/// Single-screen browser with GeckoView engine and Download Manager trigger.
+/// Pure native GeckoView browser screen with direct delegate control.
 /// Strictly governed by rules.md §25.1, §25.2, §25.7, and §29.2 (< 300 lines).
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
@@ -22,36 +24,20 @@ class BrowserScreen extends StatefulWidget {
 
 class _BrowserScreenState extends State<BrowserScreen> {
   static const String _defaultUrl = Env.defaultHomeUrl;
-  static const _downloadExtensions = [
-    '.apk', '.zip', '.rar', '.7z', '.tar', '.gz', '.bin', '.iso',
-    '.mp4', '.mkv', '.avi', '.mp3', '.pdf', '.dmg', '.exe'
-  ];
 
-  late final WebViewController _controller;
+  late final GeckoBrowserController _controller;
   late final TextEditingController _urlController;
+  final List<DetectedMedia> _detectedMedia = [];
+  SearchEngine _selectedEngine = SearchEngine.duckDuckGo;
   bool _isLoading = false;
+  double _progress = 0.0;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _controller = GeckoBrowserController();
     _urlController = TextEditingController(text: _defaultUrl);
-
-    const params = GeckoWebViewControllerCreationParams();
-    _controller = WebViewController.fromPlatformCreationParams(params)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (String url) {
-            if (mounted) {
-              setState(() => _isLoading = true);
-              _urlController.text = url;
-            }
-          },
-          onPageFinished: (String url) {
-            if (mounted) setState(() => _isLoading = false);
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(_defaultUrl));
   }
 
   @override
@@ -60,29 +46,28 @@ class _BrowserScreenState extends State<BrowserScreen> {
     super.dispose();
   }
 
-  void _handleSubmit() {
-    String input = _urlController.text.trim();
-    if (input.isEmpty) return;
+  void _handleSubmit(String rawInput) {
+    final resolvedUrl = UrlHelper.resolveInput(rawInput, _selectedEngine);
+    if (resolvedUrl.isEmpty) return;
 
-    if (!input.startsWith('http://') && !input.startsWith('https://')) {
-      input = 'https://$input';
-    }
-
-    final uri = Uri.tryParse(input);
+    final uri = Uri.tryParse(resolvedUrl);
     if (uri == null) return;
 
-    final pathLower = uri.path.toLowerCase();
-    final isDownload = _downloadExtensions.any((ext) => pathLower.endsWith(ext));
-
-    if (isDownload) {
+    if (UrlHelper.isDownloadable(resolvedUrl)) {
       _promptDownload(uri);
     } else {
-      _controller.loadRequest(uri);
+      setState(() => _errorMessage = null);
+      _controller.loadUrl(resolvedUrl);
     }
   }
 
   Future<void> _promptDownload(Uri uri) async {
-    final fileName = uri.pathSegments.lastOrNull ?? 'download_${DateTime.now().millisecondsSinceEpoch}';
+    final urlStr = uri.toString();
+    final isMagnet = urlStr.startsWith('magnet:?');
+    final fileName = isMagnet
+        ? (uri.queryParameters['dn'] ?? 'Torrent Download')
+        : (uri.pathSegments.lastOrNull ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
+
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -98,16 +83,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
             children: [
               Row(
                 children: [
-                  Icon(PhosphorIcons.downloadSimple, color: cs.primary, size: 28),
+                  Icon(
+                    isMagnet ? PhosphorIcons.shareNetwork : PhosphorIcons.downloadSimple,
+                    color: cs.primary,
+                    size: 28,
+                  ),
                   const SizedBox(width: AppSpacing.x2),
-                  Text('Start High-Speed Download?', style: AppTypography.displaySm),
+                  Text(
+                    isMagnet ? 'Start BitTorrent Download?' : 'Start High-Speed Download?',
+                    style: AppTypography.displaySm,
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.x2),
               Text(fileName, style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: AppSpacing.x1),
               Text(
-                'Uses 8 parallel connections with native foreground speed boost.',
+                isMagnet
+                    ? 'Connects to P2P peer swarm and DHT trackers.'
+                    : 'Uses 8 parallel connections with native speed boost.',
                 style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.x6),
@@ -138,14 +132,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final destPath = '${dir.path}/$fileName';
       final taskId = DateTime.now().millisecondsSinceEpoch.toString();
-
       await DownloadService().startDownload(
         taskId: taskId,
         url: uri.toString(),
         destinationPath: destPath,
         segmentsCount: 8,
       );
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -163,22 +155,69 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: Column(
           children: [
-            _buildAddressBar(colorScheme),
+            BrowserAddressBar(
+              controller: _urlController,
+              selectedEngine: _selectedEngine,
+              onEngineChanged: (engine) => setState(() => _selectedEngine = engine),
+              onSubmitted: _handleSubmit,
+              onOpenDownloads: () => context.push('/downloads'),
+              detectedMediaCount: _detectedMedia.length,
+              onOpenMediaGrabber: () => showModalBottomSheet(
+                context: context,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal)),
+                ),
+                builder: (_) => MediaGrabberSheet(items: _detectedMedia),
+              ),
+            ),
             if (_isLoading)
               LinearProgressIndicator(
+                value: _progress > 0 ? _progress : null,
                 minHeight: 2,
                 color: colorScheme.primary,
                 backgroundColor: colorScheme.surfaceContainerHighest,
               ),
+            if (_errorMessage != null) _buildErrorBanner(colorScheme),
             Expanded(
-              child: WebViewWidget.fromPlatformCreationParams(
-                params: GeckoWebViewWidgetCreationParams(controller: _controller.platform),
+              child: GeckoBrowserView(
+                initialUrl: _defaultUrl,
+                controller: _controller,
+                onPageStarted: (url) {
+                  if (mounted) {
+                    setState(() {
+                      _isLoading = true;
+                      _errorMessage = null;
+                      _urlController.text = url;
+                      _detectedMedia.clear();
+                    });
+                  }
+                },
+                onPageFinished: (success) {
+                  if (mounted) setState(() => _isLoading = false);
+                },
+                onProgressChanged: (progress) {
+                  if (mounted) setState(() => _progress = progress / 100.0);
+                },
+                onLocationChanged: (url) {
+                  if (mounted && url.isNotEmpty) _urlController.text = url;
+                  if (UrlHelper.isDownloadable(url)) {
+                    final uri = Uri.tryParse(url);
+                    if (uri != null) _promptDownload(uri);
+                  }
+                },
+                onWebResourceError: (uri, code, category) {
+                  if (mounted) {
+                    setState(() {
+                      _isLoading = false;
+                      _errorMessage = 'Failed to load page: $category ($code)';
+                    });
+                  }
+                },
               ),
             ),
           ],
@@ -187,46 +226,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
-  Widget _buildAddressBar(ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3, vertical: AppSpacing.x1),
+  Widget _buildErrorBanner(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x4, vertical: AppSpacing.x2),
+      color: colorScheme.errorContainer,
       child: Row(
         children: [
+          Icon(PhosphorIcons.warningCircle, color: colorScheme.onErrorContainer, size: 20),
+          const SizedBox(width: AppSpacing.x2),
           Expanded(
-            child: TextField(
-              controller: _urlController,
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.go,
-              onSubmitted: (_) => _handleSubmit(),
-              style: AppTypography.bodyMd.copyWith(color: colorScheme.onSurface),
-              decoration: InputDecoration(
-                hintText: 'Search or enter address',
-                hintStyle: AppTypography.bodyMd.copyWith(color: colorScheme.onSurfaceVariant),
-                prefixIcon: Icon(PhosphorIcons.globe, size: 20, color: colorScheme.onSurfaceVariant),
-                contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3, vertical: AppSpacing.x1),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  borderSide: BorderSide.none,
-                ),
+            child: Text(
+              _errorMessage ?? '',
+              style: AppTypography.bodySm.copyWith(color: colorScheme.onErrorContainer),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _errorMessage = null);
+              _controller.reload();
+            },
+            child: Text(
+              'Retry',
+              style: AppTypography.bodySm.copyWith(
+                fontWeight: FontWeight.w700,
+                color: colorScheme.onErrorContainer,
               ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.x2),
-          FilledButton(
-            onPressed: _handleSubmit,
-            style: FilledButton.styleFrom(
-              shape: AppShapes.pill,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3),
-            ),
-            child: Text('Go', style: AppTypography.bodyMd.copyWith(color: colorScheme.onPrimary, fontWeight: FontWeight.w600)),
-          ),
-          const SizedBox(width: AppSpacing.x1),
-          IconButton.filledTonal(
-            tooltip: 'Downloads',
-            icon: Icon(PhosphorIcons.downloadSimple, size: 20),
-            onPressed: () => context.push('/downloads'),
           ),
         ],
       ),

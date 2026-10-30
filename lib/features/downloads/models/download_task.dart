@@ -28,8 +28,12 @@ class DownloadTask {
   final int speedBytesPerSec;
   final int speedLimitBytesPerSec;
   final double progress;
+  final int etaSeconds;
   final DownloadStatus status;
   final String? errorMessage;
+  final bool isTorrent;
+  final int seeders;
+  final int leechers;
 
   const DownloadTask({
     required this.id,
@@ -41,8 +45,12 @@ class DownloadTask {
     this.speedBytesPerSec = 0,
     this.speedLimitBytesPerSec = 0,
     this.progress = 0.0,
+    this.etaSeconds = 0,
     this.status = DownloadStatus.pending,
     this.errorMessage,
+    this.isTorrent = false,
+    this.seeders = 0,
+    this.leechers = 0,
   });
 
   String get speedFormatted {
@@ -52,6 +60,20 @@ class DownloadTask {
       return '${(speedBytesPerSec / 1024).toStringAsFixed(1)} KB/s';
     }
     return '$speedBytesPerSec B/s';
+  }
+
+  String get etaFormatted {
+    if (etaSeconds <= 0) return '--';
+    if (etaSeconds >= 3600) {
+      final h = etaSeconds ~/ 3600;
+      final m = (etaSeconds % 3600) ~/ 60;
+      return '${h}h ${m}m';
+    } else if (etaSeconds >= 60) {
+      final m = etaSeconds ~/ 60;
+      final s = etaSeconds % 60;
+      return '${m}m ${s}s';
+    }
+    return '${etaSeconds}s';
   }
 
   String get progressPercentage => '${(progress * 100).toStringAsFixed(1)}%';
@@ -67,8 +89,12 @@ class DownloadTask {
       speedBytesPerSec: (map['speedBytesPerSec'] as num?)?.toInt() ?? 0,
       speedLimitBytesPerSec: (map['speedLimitBytesPerSec'] as num?)?.toInt() ?? 0,
       progress: (map['progress'] as num?)?.toDouble() ?? 0.0,
+      etaSeconds: (map['etaSeconds'] as num?)?.toInt() ?? 0,
       status: DownloadStatus.fromString(map['status'] as String?),
       errorMessage: map['errorMessage'] as String?,
+      isTorrent: map['isTorrent'] as bool? ?? false,
+      seeders: (map['seeders'] as num?)?.toInt() ?? 0,
+      leechers: (map['leechers'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -83,8 +109,12 @@ class DownloadTask {
       'speedBytesPerSec': speedBytesPerSec,
       'speedLimitBytesPerSec': speedLimitBytesPerSec,
       'progress': progress,
+      'etaSeconds': etaSeconds,
       'status': status.name,
       'errorMessage': errorMessage,
+      'isTorrent': isTorrent,
+      'seeders': seeders,
+      'leechers': leechers,
     };
   }
 
@@ -98,8 +128,12 @@ class DownloadTask {
     int? speedBytesPerSec,
     int? speedLimitBytesPerSec,
     double? progress,
+    int? etaSeconds,
     DownloadStatus? status,
     String? errorMessage,
+    bool? isTorrent,
+    int? seeders,
+    int? leechers,
   }) {
     return DownloadTask(
       id: id ?? this.id,
@@ -111,8 +145,12 @@ class DownloadTask {
       speedBytesPerSec: speedBytesPerSec ?? this.speedBytesPerSec,
       speedLimitBytesPerSec: speedLimitBytesPerSec ?? this.speedLimitBytesPerSec,
       progress: progress ?? this.progress,
+      etaSeconds: etaSeconds ?? this.etaSeconds,
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
+      isTorrent: isTorrent ?? this.isTorrent,
+      seeders: seeders ?? this.seeders,
+      leechers: leechers ?? this.leechers,
     );
   }
 }

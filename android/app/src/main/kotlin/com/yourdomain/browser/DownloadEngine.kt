@@ -23,10 +23,7 @@ class DownloadEngine(
     private var lastThrottleTime = System.currentTimeMillis()
     private var bytesInWindow = 0L
 
-    fun setSpeedLimit(bytesPerSec: Long) {
-        speedLimitBytesPerSec = bytesPerSec
-        task.speedLimitBytesPerSec = bytesPerSec
-    }
+    fun setSpeedLimit(bytesPerSec: Long) { speedLimitBytesPerSec = bytesPerSec; task.speedLimitBytesPerSec = bytesPerSec }
     fun start() {
         if (task.status == DownloadStatus.DOWNLOADING) return
         isPaused.set(false)
@@ -150,6 +147,7 @@ class DownloadEngine(
                 }
                 segment.downloadedBytes += bytesRead
                 recalculateTotalDownloaded()
+                onProgressUpdate(task)
             }
         } finally {
             try { input.close() } catch (_: Exception) {}
@@ -208,7 +206,7 @@ class DownloadEngine(
         var lastBytes = task.downloadedBytes
         var lastTime = System.currentTimeMillis()
         while (true) {
-            delay(500)
+            delay(250)
             val now = System.currentTimeMillis()
             val currentBytes = task.downloadedBytes
             val elapsedSec = (now - lastTime) / 1000.0

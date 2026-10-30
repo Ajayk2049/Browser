@@ -172,6 +172,43 @@ class DownloadService {
     }
   }
 
+  /// Schedules background seeding via WorkManager with unmetered/charging constraints.
+  /// Dynamically promotes to foreground only when active peer uploads occur.
+  Future<bool> scheduleTorrentSeeding({
+    required String taskId,
+    bool wifiOnly = true,
+    bool requiresCharging = true,
+  }) async {
+    try {
+      final success = await _methodChannel.invokeMethod<bool>(
+        'scheduleSeeding',
+        {
+          'taskId': taskId,
+          'wifiOnly': wifiOnly,
+          'requiresCharging': requiresCharging,
+        },
+      );
+      return success ?? false;
+    } on PlatformException catch (e) {
+      developer.log('Failed to schedule seeding: ${e.message}', name: 'Downloader', error: e);
+      return false;
+    }
+  }
+
+  /// Cancels background seeding worker for a given torrent task.
+  Future<bool> stopTorrentSeeding(String taskId) async {
+    try {
+      final success = await _methodChannel.invokeMethod<bool>(
+        'stopSeeding',
+        {'taskId': taskId},
+      );
+      return success ?? false;
+    } on PlatformException catch (e) {
+      developer.log('Failed to stop seeding: ${e.message}', name: 'Downloader', error: e);
+      return false;
+    }
+  }
+
   /// Fetches the current list of active/cached download tasks from the native engine.
   Future<List<DownloadTask>> getActiveTasks() async {
     try {
