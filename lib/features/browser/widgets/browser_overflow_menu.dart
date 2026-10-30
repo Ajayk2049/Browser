@@ -5,13 +5,21 @@ import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 
 /// Actions exposed by the browser's vertical three-dot overflow menu.
+/// Each action owns its label and Phosphor icon so the menu and the handler
+/// cannot drift apart.
 enum BrowserMenuAction {
-  share,
-  bookmarkPage,
-  findInPage,
-  history,
-  bookmarks,
-  settings,
+  share(PhosphorIcons.shareNetwork, 'Share'),
+  bookmarkPage(PhosphorIcons.bookmarkSimple, 'Bookmark page'),
+  findInPage(PhosphorIcons.magnifyingGlassPlus, 'Find in page'),
+  history(PhosphorIcons.clockCounterClockwise, 'History'),
+  bookmarks(PhosphorIcons.bookmarksSimple, 'Bookmarks'),
+  downloadManager(PhosphorIcons.downloadSimple, 'Download Manager'),
+  settings(PhosphorIcons.gearSix, 'Settings');
+
+  const BrowserMenuAction(this.icon, this.label);
+
+  final IconData icon;
+  final String label;
 }
 
 /// Vertical three-dot overflow menu anchored to the omnibox toolbar.
@@ -41,53 +49,52 @@ class BrowserOverflowMenu extends StatelessWidget {
       ),
       onSelected: onSelected,
       // Matches the 44dp omnibox height so the toolbar reads as one row.
+      // Center keeps the glyph at its natural size: a bare SizedBox hands the
+      // Icon tight 44dp constraints, and the ellipsis only inks ~22dp of that
+      // box, which left the dots looking short next to the pill.
       child: SizedBox(
         width: 44,
         height: 44,
-        child: Icon(
-          PhosphorIcons.dotsThreeVertical,
-          size: 22,
-          color: colorScheme.onSurface,
+        child: Center(
+          child: Icon(
+            PhosphorIcons.dotsThreeVertical,
+            size: 28,
+            color: colorScheme.onSurface,
+          ),
         ),
       ),
       itemBuilder: (context) => [
-        _item(BrowserMenuAction.share, PhosphorIcons.shareNetwork, 'Share'),
-        _item(BrowserMenuAction.bookmarkPage, PhosphorIcons.bookmarkSimple, 'Bookmark page'),
-        _item(BrowserMenuAction.findInPage, PhosphorIcons.magnifyingGlassPlus, 'Find in page'),
+        _item(context, BrowserMenuAction.share),
+        _item(context, BrowserMenuAction.bookmarkPage),
+        _item(context, BrowserMenuAction.findInPage),
         const PopupMenuDivider(height: 1),
-        _item(BrowserMenuAction.history, PhosphorIcons.clockCounterClockwise, 'History'),
-        _item(BrowserMenuAction.bookmarks, PhosphorIcons.bookmarksSimple, 'Bookmarks'),
+        _item(context, BrowserMenuAction.history),
+        _item(context, BrowserMenuAction.bookmarks),
+        _item(context, BrowserMenuAction.downloadManager),
         const PopupMenuDivider(height: 1),
-        _item(BrowserMenuAction.settings, PhosphorIcons.gearSix, 'Settings'),
+        _item(context, BrowserMenuAction.settings),
       ],
     );
   }
 
   PopupMenuItem<BrowserMenuAction> _item(
+    BuildContext context,
     BrowserMenuAction action,
-    IconData icon,
-    String label,
   ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return PopupMenuItem<BrowserMenuAction>(
       value: action,
       height: 44,
       child: Row(
         children: [
-          Builder(
-            builder: (context) => Icon(
-              icon,
-              size: 20,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Icon(action.icon, size: 20, color: colorScheme.onSurfaceVariant),
           const SizedBox(width: AppSpacing.x3),
-          Builder(
-            builder: (context) => Text(
-              label,
-              style: AppTypography.bodyMd.copyWith(
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+          Text(
+            action.label,
+            style: AppTypography.bodyMd.copyWith(
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
             ),
           ),
         ],

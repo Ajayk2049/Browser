@@ -5,6 +5,7 @@ import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/search_engine.dart';
 import 'browser_overflow_menu.dart';
+import 'browser_tabs_button.dart';
 import 'search_engine_icons.dart';
 
 /// Material 3 Expressive omnibox address bar with embedded search engine selector.
@@ -15,7 +16,8 @@ class BrowserAddressBar extends StatelessWidget {
   final SearchEngine selectedEngine;
   final ValueChanged<SearchEngine> onEngineChanged;
   final ValueChanged<String> onSubmitted;
-  final VoidCallback onOpenDownloads;
+  final int tabCount;
+  final VoidCallback onOpenTabs;
   final int detectedMediaCount;
   final VoidCallback onOpenMediaGrabber;
   final ValueChanged<BrowserMenuAction>? onMenuAction;
@@ -26,7 +28,8 @@ class BrowserAddressBar extends StatelessWidget {
     required this.selectedEngine,
     required this.onEngineChanged,
     required this.onSubmitted,
-    required this.onOpenDownloads,
+    required this.tabCount,
+    required this.onOpenTabs,
     this.detectedMediaCount = 0,
     required this.onOpenMediaGrabber,
     this.onMenuAction,
@@ -216,15 +219,10 @@ class BrowserAddressBar extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.x1),
           ],
-          // Downloads screen action
-          IconButton.filledTonal(
-            tooltip: 'Downloads',
-            style: IconButton.styleFrom(
-              fixedSize: const Size(44, 44),
-              padding: EdgeInsets.zero,
-            ),
-            icon: const Icon(PhosphorIcons.downloadSimple, size: 20),
-            onPressed: onOpenDownloads,
+          // Open tabs / tab manager
+          BrowserTabsButton(
+            tabCount: tabCount,
+            onPressed: onOpenTabs,
           ),
           // Vertical three-dot overflow menu
           BrowserOverflowMenu(
