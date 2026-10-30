@@ -9,6 +9,7 @@ import '../../downloads/downloads.dart';
 import '../models/search_engine.dart';
 import '../utils/url_helper.dart';
 import '../widgets/browser_address_bar.dart';
+import '../widgets/browser_overflow_menu.dart';
 import '../widgets/gecko_browser_view.dart';
 import '../widgets/media_grabber_sheet.dart';
 
@@ -73,6 +74,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  void _handleMenuAction(BrowserMenuAction action) {
+    if (action == BrowserMenuAction.settings) {
+      context.push('/settings');
+      return;
+    }
+    final label = switch (action) {
+      BrowserMenuAction.share => 'Share',
+      BrowserMenuAction.bookmarkPage => 'Bookmark page',
+      BrowserMenuAction.findInPage => 'Find in page',
+      BrowserMenuAction.history => 'History',
+      BrowserMenuAction.bookmarks => 'Bookmarks',
+      BrowserMenuAction.settings => 'Settings',
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$label is not wired up yet'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -87,6 +111,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               onEngineChanged: (engine) => setState(() => _selectedEngine = engine),
               onSubmitted: _handleSubmit,
               onOpenDownloads: () => context.push('/downloads'),
+              onMenuAction: _handleMenuAction,
               detectedMediaCount: _detectedMedia.length,
               onOpenMediaGrabber: () => showModalBottomSheet(
                 context: context,

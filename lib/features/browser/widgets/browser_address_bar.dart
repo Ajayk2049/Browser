@@ -4,6 +4,7 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/search_engine.dart';
+import 'browser_overflow_menu.dart';
 import 'search_engine_icons.dart';
 
 /// Material 3 Expressive omnibox address bar with embedded search engine selector.
@@ -17,6 +18,7 @@ class BrowserAddressBar extends StatelessWidget {
   final VoidCallback onOpenDownloads;
   final int detectedMediaCount;
   final VoidCallback onOpenMediaGrabber;
+  final ValueChanged<BrowserMenuAction>? onMenuAction;
 
   const BrowserAddressBar({
     super.key,
@@ -27,6 +29,7 @@ class BrowserAddressBar extends StatelessWidget {
     required this.onOpenDownloads,
     this.detectedMediaCount = 0,
     required this.onOpenMediaGrabber,
+    this.onMenuAction,
   });
 
   @override
@@ -42,7 +45,7 @@ class BrowserAddressBar extends StatelessWidget {
         children: [
           Expanded(
             child: Container(
-              height: 48,
+              height: 44,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -113,7 +116,7 @@ class BrowserAddressBar extends StatelessWidget {
                       }),
                     ],
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(
                         color: colorScheme.surfaceContainerLowest,
                         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -168,9 +171,16 @@ class BrowserAddressBar extends StatelessWidget {
                             hintStyle: AppTypography.bodyMd.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            suffixIconConstraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
                             suffixIcon: value.text.isNotEmpty
                                 ? IconButton(
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    iconSize: 18,
                                     icon: Icon(
                                       PhosphorIcons.xCircle,
                                       size: 18,
@@ -196,6 +206,10 @@ class BrowserAddressBar extends StatelessWidget {
               label: Text('$detectedMediaCount'),
               child: IconButton.filledTonal(
                 tooltip: 'Grab Media',
+                style: IconButton.styleFrom(
+                  fixedSize: const Size(44, 44),
+                  padding: EdgeInsets.zero,
+                ),
                 icon: Icon(PhosphorIcons.broadcast, size: 20, color: colorScheme.primary),
                 onPressed: onOpenMediaGrabber,
               ),
@@ -205,8 +219,16 @@ class BrowserAddressBar extends StatelessWidget {
           // Downloads screen action
           IconButton.filledTonal(
             tooltip: 'Downloads',
+            style: IconButton.styleFrom(
+              fixedSize: const Size(44, 44),
+              padding: EdgeInsets.zero,
+            ),
             icon: const Icon(PhosphorIcons.downloadSimple, size: 20),
             onPressed: onOpenDownloads,
+          ),
+          // Vertical three-dot overflow menu
+          BrowserOverflowMenu(
+            onSelected: onMenuAction ?? (_) {},
           ),
         ],
       ),

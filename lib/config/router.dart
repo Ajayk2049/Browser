@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import '../features/browser/screens/browser_screen.dart';
 import '../features/downloads/downloads.dart';
+import '../features/settings/settings.dart';
 
 /// App router configuration adhering to rules.md §29.5 and §32.3.
 /// Configured with BrowserScreen as initial route.
@@ -16,6 +17,11 @@ final appRouter = GoRouter(
       path: '/downloads',
       name: 'downloads',
       builder: (context, state) => const DownloadsScreen(),
+    ),
+    GoRoute(
+      path: '/settings',
+      name: 'settings',
+      builder: (context, state) => const SettingsScreen(),
     ),
   ],
 );
