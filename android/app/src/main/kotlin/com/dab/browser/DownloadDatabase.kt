@@ -1,4 +1,4 @@
-package com.yourdomain.browser
+package com.dab.browser
 
 import android.content.ContentValues
 import android.content.Context

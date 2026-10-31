@@ -1,4 +1,4 @@
-package com.yourdomain.browser
+package com.dab.browser
 
 import android.Manifest
 import android.content.ComponentName
@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
 
-    private val methodChannelName = "com.yourdomain/downloader"
-    private val eventChannelName = "com.yourdomain/downloads/updates"
+    private val methodChannelName = "com.dab/downloader"
+    private val eventChannelName = "com.dab/downloads/updates"
 
     private var downloadService: DownloadService? = null
     private var isBound = false
@@ -50,7 +50,7 @@ class MainActivity : FlutterActivity() {
 
         // Register Native GeckoView PlatformView Factory
         flutterEngine.platformViewsController.registry.registerViewFactory(
-            "com.yourdomain/geckoview",
+            "com.dab/geckoview",
             GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger)
         )
 

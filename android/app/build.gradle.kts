@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yourdomain.browser"
+    namespace = "com.dab.browser"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.yourdomain.browser"
+        applicationId = "com.dab.browser"
         // GeckoView requires minimum SDK 24
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
@@ -26,6 +26,14 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    applicationVariants.all {
+        val variantName = name
+        outputs.all {
+            (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.outputFileName =
+                "Dab_Browser_${variantName}.apk"
         }
     }
 }

@@ -134,7 +134,7 @@ const List<_SettingsSection> _sections = [
   _SettingsSection('About', [
     _SettingEntry(
       PhosphorIcons.info,
-      'About Gecko Browser',
+      'About Dab Browser',
       'Version, engine, and open-source licenses',
     ),
   ]),

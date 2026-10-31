@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -88,7 +87,7 @@ class MediaGrabberSheet extends StatelessWidget {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.x2),
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.x2),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final icon = item.type == 'audio' ? PhosphorIcons.musicNotes : PhosphorIcons.video;
@@ -125,7 +124,7 @@ class MediaGrabberSheet extends StatelessWidget {
                       const SizedBox(width: AppSpacing.x2),
                       FilledButton.tonalIcon(
                         onPressed: () => _startDownload(context, item),
-                        icon: Icon(PhosphorIcons.downloadSimple, size: 18),
+                        icon: const Icon(PhosphorIcons.downloadSimple, size: 18),
                         label: const Text('Grab'),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3),

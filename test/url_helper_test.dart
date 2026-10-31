@@ -7,7 +7,7 @@ void main() {
     test('routes plain terms and multi-word terms to DuckDuckGo search', () {
       expect(
         UrlHelper.resolveInput('flutter state management', SearchEngine.duckDuckGo),
-        'https://duckduckgo.com/?q=flutter+state+management',
+        'https://duckduckgo.com/?q=flutter%20state%20management',
       );
       expect(
         UrlHelper.resolveInput('apple', SearchEngine.duckDuckGo),
@@ -15,14 +15,14 @@ void main() {
       );
       expect(
         UrlHelper.resolveInput('how to bake sourdough', SearchEngine.duckDuckGo),
-        'https://duckduckgo.com/?q=how+to+bake+sourdough',
+        'https://duckduckgo.com/?q=how%20to%20bake%20sourdough',
       );
     });
 
     test('routes plain terms and multi-word terms to Google search', () {
       expect(
         UrlHelper.resolveInput('flutter state management', SearchEngine.google),
-        'https://www.google.com/search?q=flutter+state+management',
+        'https://www.google.com/search?q=flutter%20state%20management',
       );
       expect(
         UrlHelper.resolveInput('apple', SearchEngine.google),

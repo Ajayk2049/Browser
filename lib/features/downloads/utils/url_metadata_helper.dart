@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import '../../../config/dio_client.dart';
@@ -75,7 +76,7 @@ class UrlMetadataHelper {
         'Range': 'bytes=0-0',
         'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
         'Accept': '*/*',
-        if (ref != null) 'Referer': ref,
+        'Referer': ?ref,
       };
 
       var response = await dio.get<dynamic>(
@@ -94,7 +95,7 @@ class UrlMetadataHelper {
 
       try {
         final body = response.data;
-        if (body is ResponseBody) body.stream.listen(null).cancel();
+        if (body is ResponseBody) unawaited(body.stream.listen(null).cancel());
       } catch (_) {}
 
       final headers = response.headers;
@@ -122,7 +123,7 @@ class UrlMetadataHelper {
               headers: <String, dynamic>{
                 'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
                 'Accept': '*/*',
-                if (ref != null) 'Referer': ref,
+                'Referer': ?ref,
               },
               followRedirects: true,
               maxRedirects: 8,
@@ -138,7 +139,7 @@ class UrlMetadataHelper {
         developer.log('PROBE $code len=$len cr=$cr cl=$clRaw', name: 'Probe');
       }
 
-      String? name = _parseContentDisposition(headers.value('content-disposition')) ??
+      final String? name = _parseContentDisposition(headers.value('content-disposition')) ??
           _parseQueryParams(response.realUri) ??
           _parsePathSegment(response.realUri);
 
@@ -196,7 +197,7 @@ class UrlMetadataHelper {
   }
 
   static String _cleanFileName(String name) {
-    var c = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final c = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     return c.isEmpty ? 'download_${DateTime.now().millisecondsSinceEpoch}' : c;
   }
 

@@ -1,4 +1,4 @@
-# Gecko Browser & Multi-Threaded Download Manager
+# Dab Browser & Multi-Threaded Download Manager
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x_Stable-02569B?logo=flutter)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart)](https://dart.dev)
@@ -10,7 +10,7 @@
 
 ## Project Info
 
-Gecko Browser is a high-performance Android browser powered by Mozilla GeckoView, featuring a built-in, 1DM+-style multi-threaded segment download manager. It delivers desktop-grade web rendering, standard web extension compatibility, enhanced privacy protections, and accelerated multi-part network downloading within a unified, modern Flutter application.
+Dab Browser is a high-performance Android browser powered by Mozilla GeckoView, featuring a built-in, 1DM+-style multi-threaded segment download manager. It delivers desktop-grade web rendering, standard web extension compatibility, enhanced privacy protections, and accelerated multi-part network downloading within a unified, modern Flutter application.
 
 Designed with **Material 3 Expressive** and full **Material You (Dynamic Color)** theming, the application prioritizes speed, gesture ergonomics, and architectural cleanliness.
 

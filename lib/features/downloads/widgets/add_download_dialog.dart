@@ -110,7 +110,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [Expanded(child: Text(label, style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))), if (actions != null) ...actions]),
+        Row(children: [Expanded(child: Text(label, style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))), ...?actions]),
         const SizedBox(height: 3),
         child,
       ],

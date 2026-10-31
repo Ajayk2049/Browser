@@ -24,7 +24,7 @@ class BrowserApp extends StatelessWidget {
             );
 
         return MaterialApp.router(
-          title: 'Browser',
+          title: 'Dab Browser',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.build(
             colorScheme: lightScheme,

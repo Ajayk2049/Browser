@@ -90,7 +90,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
 
     if (mounted) {
-      AddDownloadDialog.show(context, initialUrl: text);
+      unawaited(AddDownloadDialog.show(context, initialUrl: text));
     }
   }
 
@@ -136,7 +136,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         bottom: 88, // Clear space for the bottom FAB
                       ),
                       itemCount: taskList.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.x2),
+                      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.x2),
                       itemBuilder: (context, index) {
                         final task = taskList[index];
                         return DownloadTaskCard(

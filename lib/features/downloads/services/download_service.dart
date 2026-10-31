@@ -8,9 +8,9 @@ import '../models/download_task.dart';
 /// Complies with rules.md §26.1, §26.5, §29.1, and §29.2.
 class DownloadService {
   static const MethodChannel _methodChannel =
-      MethodChannel('com.yourdomain/downloader');
+      MethodChannel('com.dab/downloader');
   static const EventChannel _eventChannel =
-      EventChannel('com.yourdomain/downloads/updates');
+      EventChannel('com.dab/downloads/updates');
 
   static final DownloadService _instance = DownloadService._internal();
   factory DownloadService() => _instance;
@@ -73,7 +73,7 @@ class DownloadService {
           'destinationPath': destinationPath,
           'segmentsCount': segmentsCount,
           'startNow': startNow,
-          if (referer != null) 'referer': referer,
+          'referer': ?referer,
         },
       );
       return success ?? false;
@@ -104,7 +104,7 @@ class DownloadService {
     try {
       return await _methodChannel.invokeMapMethod<String, dynamic>(
         'probeUrl',
-        {'url': url, if (referer != null) 'referer': referer},
+        {'url': url, 'referer': ?referer},
       );
     } catch (_) {
       return null;

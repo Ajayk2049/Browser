@@ -8,7 +8,7 @@ class GeckoBrowserController {
   MethodChannel? _channel;
 
   void _attach(int viewId) {
-    _channel = MethodChannel('com.yourdomain/geckoview_$viewId');
+    _channel = MethodChannel('com.dab/geckoview_$viewId');
   }
 
   void _detach() {
@@ -65,7 +65,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
 
   void _onPlatformViewCreated(int id) {
     widget.controller._attach(id);
-    _channel = MethodChannel('com.yourdomain/geckoview_$id')
+    _channel = MethodChannel('com.dab/geckoview_$id')
       ..setMethodCallHandler(_handleMethodCall);
   }
 
@@ -115,7 +115,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
     }
 
     return AndroidView(
-      viewType: 'com.yourdomain/geckoview',
+      viewType: 'com.dab/geckoview',
       creationParams: {'initialUrl': widget.initialUrl},
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: _onPlatformViewCreated,

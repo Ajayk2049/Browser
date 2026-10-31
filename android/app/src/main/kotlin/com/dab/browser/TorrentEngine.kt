@@ -1,4 +1,4 @@
-package com.yourdomain.browser
+package com.dab.browser
 
 import kotlinx.coroutines.*
 import java.io.File

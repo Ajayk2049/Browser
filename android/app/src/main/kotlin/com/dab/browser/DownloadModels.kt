@@ -1,4 +1,4 @@
-package com.yourdomain.browser
+package com.dab.browser
 
 enum class DownloadStatus {
     PENDING,

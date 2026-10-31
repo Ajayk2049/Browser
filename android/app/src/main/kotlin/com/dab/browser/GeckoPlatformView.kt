@@ -1,4 +1,4 @@
-package com.yourdomain.browser
+package com.dab.browser
 
 import android.content.Context
 import android.view.View
@@ -17,7 +17,7 @@ class GeckoPlatformView(
 
     private val geckoView = GeckoView(context)
     private val session = GeckoSession()
-    private val channel = MethodChannel(messenger, "com.yourdomain/geckoview_$id")
+    private val channel = MethodChannel(messenger, "com.dab/geckoview_$id")
     private var runtime: GeckoRuntime? = null
 
     init {
