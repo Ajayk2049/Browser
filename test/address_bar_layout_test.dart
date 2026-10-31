@@ -1,4 +1,3 @@
-import 'package:browser/features/browser/models/search_engine.dart';
 import 'package:browser/features/browser/widgets/browser_address_bar.dart';
 import 'package:browser/features/settings/settings.dart';
 import 'package:flutter/material.dart';
@@ -22,11 +21,10 @@ void main() {
         home: Scaffold(
           body: BrowserAddressBar(
             controller: controller,
-            selectedEngine: SearchEngine.duckDuckGo,
-            onEngineChanged: (_) {},
             onSubmitted: (_) {},
-            tabCount: 2,
-            onOpenTabs: () {},
+            isBookmarked: false,
+            onToggleBookmark: () {},
+            onReload: () {},
             detectedMediaCount: 3,
             onOpenMediaGrabber: () {},
           ),

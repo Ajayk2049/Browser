@@ -12,71 +12,71 @@ void main() {
 
   group('BrowserBottomBar', () {
     testWidgets('renders all 5 navigation actions and responds to taps', (tester) async {
-      var backTapped = false;
+      var forwardTapped = false;
+      var shareTapped = false;
       var homeTapped = false;
-      var downloadsTapped = false;
-      var bookmarksTapped = false;
+      var tabsTapped = false;
       var menuTapped = false;
 
       await tester.pumpWidget(
         buildTestableWidget(
           BrowserBottomBar(
-            canGoBack: true,
-            onBack: () => backTapped = true,
+            canGoForward: true,
+            onForward: () => forwardTapped = true,
+            onShare: () => shareTapped = true,
             onHome: () => homeTapped = true,
-            onDownloads: () => downloadsTapped = true,
-            activeDownloadsCount: 2,
-            onBookmarks: () => bookmarksTapped = true,
+            tabCount: 3,
+            onOpenTabs: () => tabsTapped = true,
             onMenu: () => menuTapped = true,
           ),
         ),
       );
 
       // Verify labels
-      expect(find.text('Back'), findsOneWidget);
+      expect(find.text('Forward'), findsOneWidget);
+      expect(find.text('Share'), findsOneWidget);
       expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Downloads'), findsOneWidget);
-      expect(find.text('Saved'), findsOneWidget);
+      expect(find.text('Tabs'), findsOneWidget);
       expect(find.text('Menu'), findsOneWidget);
 
-      // Verify badge on downloads
-      expect(find.text('2'), findsOneWidget);
+      // Verify tab counter
+      expect(find.text('3'), findsOneWidget);
 
       // Tap actions
-      await tester.tap(find.text('Back'));
-      expect(backTapped, isTrue);
+      await tester.tap(find.text('Forward'));
+      expect(forwardTapped, isTrue);
+
+      await tester.tap(find.text('Share'));
+      expect(shareTapped, isTrue);
 
       await tester.tap(find.text('Home'));
       expect(homeTapped, isTrue);
 
-      await tester.tap(find.text('Downloads'));
-      expect(downloadsTapped, isTrue);
-
-      await tester.tap(find.text('Saved'));
-      expect(bookmarksTapped, isTrue);
+      await tester.tap(find.text('Tabs'));
+      expect(tabsTapped, isTrue);
 
       await tester.tap(find.text('Menu'));
       expect(menuTapped, isTrue);
     });
 
-    testWidgets('respects canGoBack disabled state', (tester) async {
-      var backTapped = false;
+    testWidgets('respects canGoForward disabled state', (tester) async {
+      var forwardTapped = false;
 
       await tester.pumpWidget(
         buildTestableWidget(
           BrowserBottomBar(
-            canGoBack: false,
-            onBack: () => backTapped = true,
+            canGoForward: false,
+            onForward: () => forwardTapped = true,
+            onShare: () {},
             onHome: () {},
-            onDownloads: () {},
-            onBookmarks: () {},
+            onOpenTabs: () {},
             onMenu: () {},
           ),
         ),
       );
 
-      await tester.tap(find.text('Back'));
-      expect(backTapped, isFalse);
+      await tester.tap(find.text('Forward'));
+      expect(forwardTapped, isFalse);
     });
 
     testWidgets('opens menu popup when onMenuAction is provided', (tester) async {
@@ -85,9 +85,9 @@ void main() {
       await tester.pumpWidget(
         buildTestableWidget(
           BrowserBottomBar(
+            onShare: () {},
             onHome: () {},
-            onDownloads: () {},
-            onBookmarks: () {},
+            onOpenTabs: () {},
             onMenuAction: (action) => selectedAction = action,
           ),
         ),
@@ -97,9 +97,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Share'), findsOneWidget);
       expect(find.text('History'), findsOneWidget);
       expect(find.text('Download Manager'), findsOneWidget);
+      expect(find.text('Find in page'), findsOneWidget);
 
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();

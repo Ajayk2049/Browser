@@ -20,7 +20,9 @@ class BrowserTabInfo {
     final trimmed = title.trim();
     if (trimmed.isNotEmpty) return trimmed;
 
-    if (url == 'dab.app/home' || url.isEmpty) return 'Explore & Discover';
+    if (url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty) {
+      return 'Explore & Discover';
+    }
 
     final host = Uri.tryParse(url)?.host ?? '';
     if (host.isNotEmpty) return host;
@@ -28,7 +30,9 @@ class BrowserTabInfo {
     return 'New tab';
   }
 
-  String get displayUrl => (url.isEmpty || url == 'dab.app/home') ? 'dab.app/home' : url;
+  String get displayUrl => (url.isEmpty || url == 'Welcome to Dab Browser' || url == 'dab.app/home')
+      ? 'Welcome to Dab Browser'
+      : url;
 }
 
 /// Live mutable tab state maintained by the browser screen.
@@ -47,8 +51,10 @@ class BrowserTabSession {
   double progress = 0.0;
   String? error;
   bool canGoBack = false;
+  bool canGoForward = false;
+  bool isBookmarked = false;
 
-  bool get isHome => url == 'dab.app/home' || url.isEmpty;
+  bool get isHome => url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty;
 
   BrowserTabInfo info({required bool isActive}) => BrowserTabInfo(
         id: id,

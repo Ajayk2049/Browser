@@ -4,13 +4,16 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/home_content_item.dart';
+import 'quick_link_squircle.dart';
 
 /// Full-fidelity start page ("Explore & Discover") matching the Figma mockup.
+/// Displays user-saved bookmarks and clean empty state in production.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class BrowserHomeView extends StatelessWidget {
   final ValueChanged<String> onOpenUrl;
   final VoidCallback onSeeAllBookmarks;
   final VoidCallback onAddQuickLink;
+  final ValueChanged<QuickLink>? onRemoveQuickLink;
   final List<QuickLink> quickLinks;
   final List<BookmarkItem> bookmarks;
   final List<BookmarkItem> savedPages;
@@ -20,9 +23,10 @@ class BrowserHomeView extends StatelessWidget {
     required this.onOpenUrl,
     required this.onSeeAllBookmarks,
     required this.onAddQuickLink,
+    this.onRemoveQuickLink,
     this.quickLinks = QuickLink.defaults,
-    this.bookmarks = BookmarkItem.defaultBookmarks,
-    this.savedPages = BookmarkItem.defaultSavedPages,
+    this.bookmarks = const [],
+    this.savedPages = const [],
   });
 
   @override
@@ -47,7 +51,7 @@ class BrowserHomeView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.x4),
-          _buildQuickLinksRow(colorScheme, isDark, borderColor),
+          _buildQuickLinksGrid(colorScheme, isDark, borderColor),
           const SizedBox(height: AppSpacing.x6),
           _buildSectionHeader(
             title: 'Bookmarks',
@@ -62,7 +66,14 @@ class BrowserHomeView extends StatelessWidget {
             colorScheme: colorScheme,
           ),
           const SizedBox(height: AppSpacing.x2),
-          _buildCardList(bookmarks, cardBg, borderColor, colorScheme, PhosphorIcons.globe),
+          _buildCardList(
+            bookmarks,
+            cardBg,
+            borderColor,
+            colorScheme,
+            PhosphorIcons.bookmarkSimple,
+            'No bookmarks yet. Tap the star icon to save pages.',
+          ),
           const SizedBox(height: AppSpacing.x6),
           _buildSectionHeader(
             title: 'Saved Pages',
@@ -73,75 +84,58 @@ class BrowserHomeView extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
               child: Text(
-                '${savedPages.length} unread',
-                style: AppTypography.bodyXs.copyWith(color: colorScheme.onSurfaceVariant, fontSize: 11),
+                '${savedPages.length} saved',
+                style: AppTypography.bodyXs.copyWith(
+                  color: isDark ? Colors.white70 : colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             colorScheme: colorScheme,
           ),
           const SizedBox(height: AppSpacing.x2),
-          _buildCardList(savedPages, cardBg, borderColor, colorScheme, PhosphorIcons.fileText),
-          const SizedBox(height: 80), // Bottom padding for floating navigation bar
+          _buildCardList(
+            savedPages,
+            cardBg,
+            borderColor,
+            colorScheme,
+            PhosphorIcons.article,
+            'No saved offline pages yet.',
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildQuickLinksRow(ColorScheme colorScheme, bool isDark, Color borderColor) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: quickLinks.map((link) {
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x1),
-            child: InkWell(
-              onTap: () => link.isAddButton ? onAddQuickLink() : onOpenUrl(link.url),
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF161B26) : colorScheme.surfaceContainerLowest,
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                      border: Border.all(color: borderColor),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        link.letter,
-                        style: AppTypography.displaySm.copyWith(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: link.isAddButton ? colorScheme.onSurfaceVariant : colorScheme.primary,
-                        ),
-                      ),
-                    ),
+  Widget _buildQuickLinksGrid(ColorScheme colorScheme, bool isDark, Color borderColor) {
+    final allItems = [
+      ...quickLinks,
+      const QuickLink(id: 'add', title: 'Add', url: '', letter: '+'),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = constraints.maxWidth / 4;
+        return Wrap(
+          runSpacing: AppSpacing.x4,
+          children: [
+            for (final item in allItems)
+              SizedBox(
+                width: itemWidth,
+                child: Center(
+                  child: QuickLinkSquircle(
+                    item: item,
+                    isDark: isDark,
+                    borderColor: borderColor,
+                    onTap: item.isAddButton ? onAddQuickLink : () => onOpenUrl(item.url),
+                    onLongPress: item.isAddButton ? null : () => onRemoveQuickLink?.call(item),
                   ),
-                  const SizedBox(height: AppSpacing.x2),
-                  Text(
-                    link.title,
-                    style: AppTypography.bodyXs.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: colorScheme.onSurface,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+          ],
         );
-      }).toList(),
+      },
     );
   }
 
@@ -152,10 +146,11 @@ class BrowserHomeView extends StatelessWidget {
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           title,
-          style: AppTypography.bodyMd.copyWith(
+          style: AppTypography.bodyLg.copyWith(
             fontWeight: FontWeight.w700,
             color: colorScheme.onSurface,
           ),
@@ -171,7 +166,33 @@ class BrowserHomeView extends StatelessWidget {
     Color borderColor,
     ColorScheme colorScheme,
     IconData defaultIcon,
+    String emptyMessage,
   ) {
+    if (items.isEmpty) {
+      return Material(
+        color: cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          side: BorderSide(color: borderColor),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x4, vertical: AppSpacing.x4),
+          child: Row(
+            children: [
+              Icon(defaultIcon, size: 20, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+              const SizedBox(width: AppSpacing.x3),
+              Expanded(
+                child: Text(
+                  emptyMessage,
+                  style: AppTypography.bodySm.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: cardBg,
       shape: RoundedRectangleBorder(
@@ -220,3 +241,4 @@ class BrowserHomeView extends StatelessWidget {
     );
   }
 }
+

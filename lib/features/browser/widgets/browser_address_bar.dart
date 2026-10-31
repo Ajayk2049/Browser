@@ -4,32 +4,36 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/search_engine.dart';
-import 'browser_tabs_button.dart';
-import 'search_engine_icons.dart';
 
-/// Material 3 Expressive omnibox address bar with embedded search engine selector.
-/// Fully unified pill-shaped address box with anchored contextual engine picker.
+/// Top address bar matching the mobile mock-up with Star bookmark trigger,
+/// secure lock indicator, centered URL/search omnibox, and reload button.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class BrowserAddressBar extends StatelessWidget {
   final TextEditingController controller;
-  final SearchEngine selectedEngine;
-  final ValueChanged<SearchEngine> onEngineChanged;
   final ValueChanged<String> onSubmitted;
-  final int tabCount;
-  final VoidCallback onOpenTabs;
+  final bool isBookmarked;
+  final VoidCallback? onToggleBookmark;
+  final VoidCallback? onOpenPageInfo;
+  final VoidCallback onReload;
+  final bool isLoading;
   final int detectedMediaCount;
   final VoidCallback onOpenMediaGrabber;
+  final SearchEngine selectedEngine;
+  final ValueChanged<SearchEngine>? onEngineChanged;
 
   const BrowserAddressBar({
     super.key,
     required this.controller,
-    required this.selectedEngine,
-    required this.onEngineChanged,
     required this.onSubmitted,
-    required this.tabCount,
-    required this.onOpenTabs,
+    this.isBookmarked = false,
+    this.onToggleBookmark,
+    this.onOpenPageInfo,
+    required this.onReload,
+    this.isLoading = false,
     this.detectedMediaCount = 0,
     required this.onOpenMediaGrabber,
+    this.selectedEngine = SearchEngine.duckDuckGo,
+    this.onEngineChanged,
   });
 
   @override
@@ -42,10 +46,12 @@ class BrowserAddressBar extends StatelessWidget {
         vertical: AppSpacing.x2,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Container(
               height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -54,99 +60,49 @@ class BrowserAddressBar extends StatelessWidget {
                 ),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const SizedBox(width: 6),
-                  // Left search engine selector capsule badge with anchored popup
-                  PopupMenuButton<SearchEngine>(
-                    padding: EdgeInsets.zero,
-                    tooltip: 'Search engine options',
-                    initialValue: selectedEngine,
-                    position: PopupMenuPosition.under,
-                    offset: const Offset(0, 8),
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.m3Md),
-                      side: BorderSide(
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  // Left Star button (toggle bookmark)
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: onToggleBookmark == null
+                          ? null
+                          : (isBookmarked ? 'Remove bookmark' : 'Bookmark this page'),
+                      icon: Icon(
+                        isBookmarked ? PhosphorIcons.starFill : PhosphorIcons.star,
+                        size: 20,
+                        color: isBookmarked
+                            ? const Color(0xFFEAB308)
+                            : (onToggleBookmark == null
+                                ? colorScheme.onSurfaceVariant.withValues(alpha: 0.35)
+                                : colorScheme.onSurfaceVariant),
                       ),
+                      onPressed: onToggleBookmark,
                     ),
-                    color: colorScheme.surfaceContainerLowest,
-                    onSelected: (chosen) {
-                      onEngineChanged(chosen);
-                      if (controller.text.trim().isNotEmpty) {
-                        onSubmitted(controller.text.trim());
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem<SearchEngine>(
-                        enabled: false,
-                        height: 36,
-                        child: Text(
-                          'This time search in:',
-                          style: AppTypography.bodySm.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: colorScheme.onSurface,
-                          ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Secure lock indicator button
+                  Tooltip(
+                    message: 'View site information',
+                    child: InkWell(
+                      onTap: onOpenPageInfo,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                        child: Icon(
+                          PhosphorIcons.lockSimple,
+                          size: 16,
+                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
                         ),
-                      ),
-                      const PopupMenuDivider(height: 1),
-                      ...SearchEngine.values.map((engine) {
-                        final isSelected = engine == selectedEngine;
-                        return PopupMenuItem<SearchEngine>(
-                          value: engine,
-                          height: 48,
-                          child: Row(
-                            children: [
-                              SearchEngineIcon(engine: engine, size: 22),
-                              const SizedBox(width: AppSpacing.x3),
-                              Expanded(
-                                child: Text(
-                                  engine.displayName,
-                                  style: AppTypography.bodyMd.copyWith(
-                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                    color: isSelected ? colorScheme.primary : colorScheme.onSurface,
-                                  ),
-                                ),
-                              ),
-                              if (isSelected)
-                                Icon(PhosphorIcons.check, size: 18, color: colorScheme.primary),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerLowest,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SearchEngineIcon(engine: selectedEngine, size: 20),
-                          const SizedBox(width: 4),
-                          Icon(
-                            PhosphorIcons.caretDown,
-                            size: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.x2),
-                  // Center omnibox text input (completely borderless and seamless)
+                  const SizedBox(width: 4),
+                  // Center omnibox text input
                   Expanded(
                     child: ValueListenableBuilder<TextEditingValue>(
                       valueListenable: controller,
@@ -155,8 +111,14 @@ class BrowserAddressBar extends StatelessWidget {
                           controller: controller,
                           keyboardType: TextInputType.url,
                           textInputAction: TextInputAction.search,
+                          textAlign: TextAlign.center,
+                          textAlignVertical: TextAlignVertical.center,
                           onSubmitted: onSubmitted,
-                          style: AppTypography.bodyMd.copyWith(color: colorScheme.onSurface),
+                          style: AppTypography.bodyMd.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                            height: 1.2,
+                          ),
                           decoration: InputDecoration(
                             isDense: true,
                             filled: false,
@@ -171,37 +133,36 @@ class BrowserAddressBar extends StatelessWidget {
                             hintStyle: AppTypography.bodyMd.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                            suffixIconConstraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
-                            suffixIcon: value.text.isNotEmpty
-                                ? IconButton(
-                                    padding: EdgeInsets.zero,
-                                    visualDensity: VisualDensity.compact,
-                                    iconSize: 18,
-                                    icon: Icon(
-                                      PhosphorIcons.xCircle,
-                                      size: 18,
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                    onPressed: () => controller.clear(),
-                                  )
-                                : null,
+                            contentPadding: EdgeInsets.zero,
                           ),
                         );
                       },
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 6),
+                  // Right Reload button
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Reload',
+                      icon: Icon(
+                        PhosphorIcons.arrowClockwise,
+                        size: 20,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: onReload,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.x2),
-          // Media Sniffer Grabber button (dynamic badge)
+          // Dynamic Media Grabber button
           if (detectedMediaCount > 0) ...[
+            const SizedBox(width: AppSpacing.x2),
             Badge(
               label: Text('$detectedMediaCount'),
               child: IconButton.filledTonal(
@@ -214,13 +175,7 @@ class BrowserAddressBar extends StatelessWidget {
                 onPressed: onOpenMediaGrabber,
               ),
             ),
-            const SizedBox(width: AppSpacing.x1),
           ],
-          // Open tabs / tab manager
-          BrowserTabsButton(
-            tabCount: tabCount,
-            onPressed: onOpenTabs,
-          ),
         ],
       ),
     );

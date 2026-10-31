@@ -187,6 +187,27 @@ class UrlMetadataHelper {
     return null;
   }
 
+  static String extractExtension(String name) => _extractExtension(name);
+
+  static String extractCandidateName(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
+    if (trimmed.startsWith('magnet:?')) {
+      final uri = Uri.tryParse(trimmed);
+      final dn = uri?.queryParameters['dn'];
+      if (dn != null && dn.isNotEmpty) return _cleanFileName(Uri.decodeComponent(dn.replaceAll('+', ' ')));
+      return 'Torrent_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null) {
+      final cand = _parseQueryParams(uri) ?? _parsePathSegment(uri);
+      if (cand != null && cand.isNotEmpty) return _cleanFileName(cand);
+      final lastSeg = uri.pathSegments.lastWhere((s) => s.isNotEmpty, orElse: () => '');
+      if (lastSeg.isNotEmpty) return _cleanFileName(Uri.decodeComponent(lastSeg));
+    }
+    return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
+  }
+
   static String _extractExtension(String name) {
     final dot = name.lastIndexOf('.');
     if (dot != -1 && dot < name.length - 1) {

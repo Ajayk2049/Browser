@@ -59,16 +59,22 @@ class DownloadEngine(
     }
 
     private suspend fun executeDownload() = withContext(Dispatchers.IO) {
-        val destFile = File(task.destinationPath)
-        val partFile = File("${task.destinationPath}.part")
-        destFile.parentFile?.mkdirs()
-
         // 1. Single pre-flight request (resolves final URL, Content-Range size & Content-Type)
         if (task.totalBytes <= 0 || task.segments.isEmpty() || task.finalUrl == null) {
             val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer)
             task.finalUrl = probe.finalUrl
             task.resolvedContentType = probe.contentType
             if (task.totalBytes <= 0 && probe.contentLength > 0) task.totalBytes = probe.contentLength
+
+            if (!probe.suggestedFileName.isNullOrBlank()) {
+                val currentFile = File(task.destinationPath)
+                val currentName = currentFile.name
+                if (currentName.startsWith("download_") || currentName.startsWith("Resolving") || currentName.endsWith(".bin")) {
+                    val parent = currentFile.parent ?: ""
+                    task.destinationPath = if (parent.isNotEmpty()) "$parent/${probe.suggestedFileName}" else probe.suggestedFileName!!
+                }
+            }
+            onProgressUpdate(task)
 
             // Intercept HTML error/preview pages (e.g. Drive viewer or expired token page)
             val isHtml = probe.contentType?.contains("text/html") == true
@@ -83,6 +89,10 @@ class DownloadEngine(
                 task.segments.add(DownloadSegment(0, 0, end))
             }
         }
+
+        val destFile = File(task.destinationPath)
+        val partFile = File("${task.destinationPath}.part")
+        destFile.parentFile?.mkdirs()
 
         val raf = RandomAccessFile(partFile, "rw")
         if (task.totalBytes > 0 && partFile.length() < task.totalBytes) {

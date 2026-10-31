@@ -6,9 +6,8 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 
-/// 1DM+-style expandable Speed Dial Floating Action Button.
-/// Options stack directly on top of the plus icon.
-/// The plus icon rotates by 45 degrees to become an X; pressing it closes the menu.
+/// Pure B&W theme-based 1DM+ Speed Dial Floating Action Button.
+/// Eliminates colored backgrounds, adhering strictly to monochrome tokens.
 /// Complies with rules.md §13, §25.1, §25.2, §25.4, §25.7, and §29.2 (< 250 lines).
 class DownloadSpeedDialFab extends StatefulWidget {
   final bool isOpen;
@@ -69,8 +68,9 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
   Widget _buildSpeedDialOption({
     required String label,
     required IconData icon,
-    required Color buttonColor,
-    required Color onButtonColor,
+    required Color buttonBg,
+    required Color textColor,
+    required Color borderColor,
     required VoidCallback onTap,
   }) {
     return Row(
@@ -81,14 +81,15 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: buttonColor,
+              color: buttonBg,
               borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(color: borderColor, width: 1),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 4,
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
@@ -96,7 +97,7 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
             child: Text(
               label,
               style: AppTypography.bodyMd.copyWith(
-                color: onButtonColor,
+                color: textColor,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -105,21 +106,19 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
         const SizedBox(width: AppSpacing.x3),
         // Mini circular action button (44x44)
         Material(
-          color: buttonColor,
-          shape: const CircleBorder(),
-          elevation: 4,
+          color: buttonBg,
+          shape: CircleBorder(side: BorderSide(color: borderColor, width: 1)),
+          elevation: 3,
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: SizedBox(
               width: 44,
               height: 44,
-              child: Icon(icon, color: onButtonColor, size: 22),
+              child: Icon(icon, color: textColor, size: 20),
             ),
           ),
         ),
-        // 6px right spacing so 44px mini-button center aligns with 56px FAB center:
-        // (56 - 44) / 2 = 6px
         const SizedBox(width: 6),
       ],
     );
@@ -127,13 +126,20 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final optionBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final optionTextColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final optionBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+    final fabBg = isDark ? Colors.white : const Color(0xFF0F172A);
+    final fabFg = isDark ? const Color(0xFF0F172A) : Colors.white;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Speed dial options stacked directly on top of the FAB
+        // Stacked options
         AnimatedBuilder(
           animation: _expandAnimation,
           builder: (context, child) {
@@ -156,16 +162,18 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
                       _buildSpeedDialOption(
                         label: 'From clipboard',
                         icon: PhosphorIcons.clipboardText,
-                        buttonColor: const Color(0xFFF07038),
-                        onButtonColor: Colors.white,
+                        buttonBg: optionBg,
+                        textColor: optionTextColor,
+                        borderColor: optionBorder,
                         onTap: widget.onFromClipboard,
                       ),
                       const SizedBox(height: AppSpacing.x3),
                       _buildSpeedDialOption(
                         label: 'Add link',
                         icon: PhosphorIcons.link,
-                        buttonColor: const Color(0xFF3872F0),
-                        onButtonColor: Colors.white,
+                        buttonBg: optionBg,
+                        textColor: optionTextColor,
+                        borderColor: optionBorder,
                         onTap: widget.onAddLink,
                       ),
                     ],
@@ -175,24 +183,19 @@ class _DownloadSpeedDialFabState extends State<DownloadSpeedDialFab>
             );
           },
         ),
-        // Primary Floating Action Button: rotates 45 deg from + to X
+        // Primary Floating Action Button (56x56)
         SizedBox(
           width: 56,
           height: 56,
           child: FloatingActionButton(
             onPressed: widget.onToggle,
-            backgroundColor: widget.isOpen
-                ? colorScheme.surfaceContainerHighest
-                : colorScheme.primaryContainer,
-            foregroundColor: widget.isOpen
-                ? colorScheme.onSurface
-                : colorScheme.onPrimaryContainer,
+            backgroundColor: fabBg,
+            foregroundColor: fabFg,
             elevation: 4,
             shape: const CircleBorder(),
             child: AnimatedBuilder(
               animation: _expandAnimation,
               builder: (context, _) {
-                // Rotating + by 45 degrees (pi / 4) cleanly produces X
                 return Transform.rotate(
                   angle: _expandAnimation.value * (math.pi / 4),
                   child: const Icon(

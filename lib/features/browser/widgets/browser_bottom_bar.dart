@@ -5,28 +5,29 @@ import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import 'browser_overflow_menu.dart';
 
-/// Floating/docked bottom action bar matching Figma "Bottom Floating Action Bar".
+/// Floating/docked bottom action bar matching user layout specifications:
+/// 1. Forward, 2. Share, 3. Home (centered), 4. Tabs, 5. Menu.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class BrowserBottomBar extends StatelessWidget {
-  final VoidCallback? onBack;
-  final bool canGoBack;
+  final VoidCallback? onForward;
+  final bool canGoForward;
+  final VoidCallback onShare;
   final VoidCallback onHome;
   final bool isHome;
-  final VoidCallback onDownloads;
-  final int activeDownloadsCount;
-  final VoidCallback onBookmarks;
+  final int tabCount;
+  final VoidCallback onOpenTabs;
   final ValueChanged<BrowserMenuAction>? onMenuAction;
   final VoidCallback? onMenu;
 
   const BrowserBottomBar({
     super.key,
-    this.onBack,
-    this.canGoBack = false,
+    this.onForward,
+    this.canGoForward = false,
+    required this.onShare,
     required this.onHome,
     this.isHome = false,
-    required this.onDownloads,
-    this.activeDownloadsCount = 0,
-    required this.onBookmarks,
+    this.tabCount = 1,
+    required this.onOpenTabs,
     this.onMenuAction,
     this.onMenu,
   });
@@ -62,14 +63,24 @@ class BrowserBottomBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // 1. Forward button
               Expanded(
                 child: _BarItem(
-                  icon: PhosphorIcons.arrowLeft,
-                  label: 'Back',
-                  enabled: canGoBack,
-                  onTap: canGoBack ? onBack : null,
+                  icon: PhosphorIcons.arrowRight,
+                  label: 'Forward',
+                  enabled: canGoForward,
+                  onTap: canGoForward ? onForward : null,
                 ),
               ),
+              // 2. Share button
+              Expanded(
+                child: _BarItem(
+                  icon: PhosphorIcons.shareNetwork,
+                  label: 'Share',
+                  onTap: onShare,
+                ),
+              ),
+              // 3. Home button in Center
               Expanded(
                 child: _BarItem(
                   icon: PhosphorIcons.house,
@@ -78,21 +89,15 @@ class BrowserBottomBar extends StatelessWidget {
                   onTap: onHome,
                 ),
               ),
+              // 4. Tabs button
               Expanded(
                 child: _BarItem(
-                  icon: PhosphorIcons.downloadSimple,
-                  label: 'Downloads',
-                  badgeCount: activeDownloadsCount > 0 ? activeDownloadsCount : null,
-                  onTap: onDownloads,
+                  customIcon: _buildTabChip(colorScheme, isDark),
+                  label: 'Tabs',
+                  onTap: onOpenTabs,
                 ),
               ),
-              Expanded(
-                child: _BarItem(
-                  icon: PhosphorIcons.bookmarkSimple,
-                  label: 'Saved',
-                  onTap: onBookmarks,
-                ),
-              ),
+              // 5. Menu button
               Expanded(
                 child: onMenuAction != null
                     ? BrowserMenuPopup(
@@ -114,22 +119,46 @@ class BrowserBottomBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildTabChip(ColorScheme colorScheme, bool isDark) {
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: colorScheme.onSurfaceVariant,
+          width: 1.6,
+        ),
+      ),
+      child: Text(
+        '$tabCount',
+        style: AppTypography.bodyXs.copyWith(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: colorScheme.onSurfaceVariant,
+          height: 1,
+        ),
+      ),
+    );
+  }
 }
 
 class _BarItem extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? customIcon;
   final String label;
   final bool enabled;
   final bool isSelected;
-  final int? badgeCount;
   final VoidCallback? onTap;
 
   const _BarItem({
-    required this.icon,
+    this.icon,
+    this.customIcon,
     required this.label,
     this.enabled = true,
     this.isSelected = false,
-    this.badgeCount,
     this.onTap,
   });
 
@@ -148,32 +177,10 @@ class _BarItem extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(icon, size: 22, color: itemColor),
-              if (badgeCount != null)
-                Positioned(
-                  top: -4,
-                  right: -8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$badgeCount',
-                      style: AppTypography.bodyXs.copyWith(
-                        color: colorScheme.onPrimary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          if (customIcon != null)
+            customIcon!
+          else if (icon != null)
+            Icon(icon, size: 22, color: itemColor),
           const SizedBox(height: 3),
           Text(
             label,

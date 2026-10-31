@@ -4,4 +4,5 @@ export 'services/download_service.dart';
 export 'utils/url_metadata_helper.dart';
 export 'widgets/add_download_dialog.dart';
 export 'widgets/download_speed_dial_fab.dart';
+export 'widgets/download_storage_card.dart';
 export 'widgets/download_task_card.dart';

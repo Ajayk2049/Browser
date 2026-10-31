@@ -7,7 +7,7 @@ import '../../../theme/tokens/app_typography.dart';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
 
-/// Card widget displaying active, paused, or finished download metrics.
+/// Production-grade 1DM+ download card supporting multithreaded chunk visualization.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class DownloadTaskCard extends StatelessWidget {
   final DownloadTask task;
@@ -19,144 +19,175 @@ class DownloadTaskCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final fileName = File(task.destinationPath).uri.pathSegments.lastOrNull ??
+  String _getFileName() {
+    final raw = task.destinationPath.isNotEmpty ? task.destinationPath : task.url;
+    return File(raw).uri.pathSegments.lastOrNull ??
         Uri.tryParse(task.url)?.pathSegments.lastOrNull ??
         'download_${task.id}';
+  }
+
+  IconData _getFileIcon(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.iso') || lower.endsWith('.img') || lower.endsWith('.dmg')) {
+      return PhosphorIcons.disc;
+    }
+    if (lower.endsWith('.flac') || lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
+      return PhosphorIcons.musicNote;
+    }
+    if (lower.endsWith('.pdf') || lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.txt')) {
+      return PhosphorIcons.fileText;
+    }
+    if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.mov')) {
+      return PhosphorIcons.filmStrip;
+    }
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.tar')) {
+      return PhosphorIcons.archive;
+    }
+    return PhosphorIcons.file;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fileName = _getFileName();
+    final fileIcon = _getFileIcon(fileName);
+
+    final cardBg = isDark ? const Color(0xFF131722) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFEDF0F5);
+    final iconBg = isDark ? const Color(0xFF1E2533) : const Color(0xFFF1F5F9);
+    final iconColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final trackColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final fillColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
+    final isCompleted = task.status == DownloadStatus.completed;
+    final isActive = task.status == DownloadStatus.downloading ||
+        task.status == DownloadStatus.connecting ||
+        task.status == DownloadStatus.paused ||
+        task.status == DownloadStatus.queued;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.x4),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
+        color: cardBg,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(color: borderColor, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Icon(PhosphorIcons.fileArrowDown, color: colorScheme.primary, size: 24),
-              const SizedBox(width: AppSpacing.x2),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(fileIcon, size: 20, color: iconColor),
+              ),
+              const SizedBox(width: AppSpacing.x3),
               Expanded(
-                child: Text(
-                  fileName,
-                  style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName,
+                      style: AppTypography.bodyMd.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _buildSubtitle(isCompleted),
+                      style: AppTypography.bodySm.copyWith(
+                        color: subColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-              _buildStatusPill(task.status, colorScheme),
+              const SizedBox(width: AppSpacing.x2),
+              _buildTrailingAction(isCompleted, textColor, subColor),
             ],
           ),
-          const SizedBox(height: AppSpacing.x2),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            child: LinearProgressIndicator(
-              value: task.totalBytes > 0 ? task.progress : null,
-              minHeight: 6,
-              color: task.status == DownloadStatus.failed
-                  ? colorScheme.error
-                  : colorScheme.primary,
-              backgroundColor: colorScheme.surfaceContainerHighest,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.x1),
-          if (task.status == DownloadStatus.failed && task.errorMessage != null) ...[
-            Text(
-              task.errorMessage!,
-              style: AppTypography.bodySm.copyWith(color: colorScheme.error, fontSize: 11),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: AppSpacing.x1),
+          if (isActive) ...[
+            const SizedBox(height: AppSpacing.x3),
+            _buildMultithreadedChunks(trackColor, fillColor),
           ],
-          Row(
-            children: [
-              Text(
-                '${task.progressPercentage} • ${task.speedFormatted}'
-                '${task.status == DownloadStatus.downloading && task.etaSeconds > 0 ? " • ETA: ${task.etaFormatted}" : ""}'
-                '${task.isTorrent ? " • S:${task.seeders} P:${task.leechers}" : ""}',
-                style: AppTypography.monoMd.copyWith(
-                  fontSize: 11,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              _buildActions(task, colorScheme),
-            ],
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildStatusPill(DownloadStatus status, ColorScheme colorScheme) {
-    Color bg;
-    Color fg;
-    switch (status) {
-      case DownloadStatus.downloading:
-        bg = colorScheme.primaryContainer;
-        fg = colorScheme.onPrimaryContainer;
-        break;
-      case DownloadStatus.queued:
-      case DownloadStatus.connecting:
-      case DownloadStatus.pending:
-        bg = colorScheme.tertiaryContainer;
-        fg = colorScheme.onTertiaryContainer;
-        break;
-      case DownloadStatus.completed:
-        bg = colorScheme.secondaryContainer;
-        fg = colorScheme.onSecondaryContainer;
-        break;
-      case DownloadStatus.failed:
-        bg = colorScheme.errorContainer;
-        fg = colorScheme.onErrorContainer;
-        break;
-      case DownloadStatus.paused:
-      case DownloadStatus.canceled:
-        bg = colorScheme.surfaceContainerHighest;
-        fg = colorScheme.onSurfaceVariant;
-        break;
+  String _buildSubtitle(bool isCompleted) {
+    if (isCompleted) {
+      final date = task.dateLabel ?? 'Today';
+      return '${task.fileSizeFormatted} • $date';
+    }
+    final dl = task.downloadedSizeFormatted;
+    final total = task.fileSizeFormatted;
+    final threads = '${task.segmentsCount} Threads';
+    final speed = task.speedFormatted;
+    return '$dl / $total • $threads • $speed';
+  }
+
+  Widget _buildTrailingAction(bool isCompleted, Color textColor, Color subColor) {
+    if (isCompleted) {
+      return Icon(PhosphorIcons.check, size: 20, color: subColor);
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x2, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(AppRadius.pill)),
-      child: Text(
-        status.name.toUpperCase(),
-        style: AppTypography.monoMd.copyWith(fontSize: 10, fontWeight: FontWeight.w700, color: fg),
+    final isDownloading = task.status == DownloadStatus.downloading || task.status == DownloadStatus.connecting;
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      icon: Icon(
+        isDownloading ? PhosphorIcons.pause : PhosphorIcons.play,
+        size: 22,
+        color: textColor,
       ),
+      onPressed: () {
+        if (isDownloading) {
+          DownloadService().pauseDownload(task.id);
+        } else {
+          DownloadService().resumeDownload(task.id);
+        }
+      },
     );
   }
 
-  Widget _buildActions(DownloadTask task, ColorScheme colorScheme) {
+  Widget _buildMultithreadedChunks(Color trackColor, Color fillColor) {
+    final chunks = task.getChunks(8);
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        if (task.status == DownloadStatus.downloading ||
-            task.status == DownloadStatus.connecting)
-          IconButton(
-            icon: Icon(PhosphorIcons.pause, size: 20, color: colorScheme.onSurface),
-            tooltip: 'Pause',
-            onPressed: () => DownloadService().pauseDownload(task.id),
-          )
-        else if (task.status == DownloadStatus.paused ||
-            task.status == DownloadStatus.queued)
-          IconButton(
-            icon: Icon(PhosphorIcons.play, size: 20, color: colorScheme.primary),
-            tooltip: 'Resume',
-            onPressed: () => DownloadService().resumeDownload(task.id),
+        for (int i = 0; i < chunks.length; i++) ...[
+          if (i > 0) const SizedBox(width: 5),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 20,
+                color: trackColor,
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: chunks[i],
+                  child: Container(color: fillColor),
+                ),
+              ),
+            ),
           ),
-        IconButton(
-          icon: Icon(PhosphorIcons.trash, size: 20, color: colorScheme.error),
-          tooltip: 'Delete / Cancel',
-          onPressed: onDelete,
-        ),
+        ],
       ],
     );
   }
 }
-

@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import '../features/browser/screens/bookmarks_screen.dart';
 import '../features/browser/screens/browser_screen.dart';
 import '../features/downloads/downloads.dart';
 import '../features/settings/settings.dart';
@@ -12,6 +13,11 @@ final appRouter = GoRouter(
       path: '/',
       name: 'browser',
       builder: (context, state) => const BrowserScreen(),
+    ),
+    GoRoute(
+      path: '/bookmarks',
+      name: 'bookmarks',
+      builder: (context, state) => const BookmarksScreen(),
     ),
     GoRoute(
       path: '/downloads',

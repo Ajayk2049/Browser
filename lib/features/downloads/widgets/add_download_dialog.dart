@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,21 +10,15 @@ import '../../../theme/tokens/app_typography.dart';
 import '../services/download_service.dart';
 import '../utils/url_metadata_helper.dart';
 
-/// Material 3 white-theme Download dialog matching 1DM+ layout.
-/// Supports ADD (queue/paused), CANCEL, and START (active download) actions.
+/// Material 3 white-theme Download dialog matching 1DM+ layout with auto-resolution.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
   final String? initialUrl;
 
   const AddDownloadDialog({super.key, this.initialUrl});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl}) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AddDownloadDialog(initialUrl: initialUrl),
-    );
-  }
+  static Future<bool?> show(BuildContext context, {String? initialUrl}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -33,6 +28,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   late final TextEditingController _urlCtrl;
   late final TextEditingController _refCtrl;
   late final TextEditingController _nameCtrl;
+  Timer? _debounceTimer;
   String _ext = 'bin';
   String _sizeText = 'Resolving file info...';
   bool _supportsResume = true;
@@ -46,13 +42,35 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     _urlCtrl = TextEditingController(text: url);
     final uri = Uri.tryParse(url);
     _refCtrl = TextEditingController(text: uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : '');
-    _nameCtrl = TextEditingController(text: 'Resolving title...');
+    final cand = url.isNotEmpty ? UrlMetadataHelper.extractCandidateName(url) : '';
+    _nameCtrl = TextEditingController(text: cand);
+    _ext = cand.isNotEmpty ? UrlMetadataHelper.extractExtension(cand) : 'bin';
+    _urlCtrl.addListener(_onUrlChanged);
     _initStorage();
     if (url.isNotEmpty) _probe(url);
   }
 
+  void _onUrlChanged() {
+    final url = _urlCtrl.text.trim();
+    if (url.isEmpty || !(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('magnet:?'))) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) {
+      _refCtrl.text = '${uri.scheme}://${uri.host}';
+    }
+    final cand = UrlMetadataHelper.extractCandidateName(url);
+    setState(() {
+      if (_nameCtrl.text.isEmpty || _nameCtrl.text.startsWith('download_') || _nameCtrl.text == 'Resolving title...') {
+        _nameCtrl.text = cand;
+      }
+      _ext = UrlMetadataHelper.extractExtension(_nameCtrl.text.isNotEmpty ? _nameCtrl.text : cand);
+    });
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () => _probe(url));
+  }
+
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _urlCtrl.dispose(); _refCtrl.dispose(); _nameCtrl.dispose();
     super.dispose();
   }
@@ -61,14 +79,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final dir = await getApplicationDocumentsDirectory();
     _storagePath = dir.path;
     final space = await DownloadService().getDiskSpace(dir.path);
-    final a = space['available'] ?? 0;
-    final t = space['total'] ?? 0;
+    final a = space['available'] ?? 0, t = space['total'] ?? 0;
     if (mounted) {
-      setState(() {
-        _storageText = t > 0
-            ? 'Storage: ${(a / 1e9).toStringAsFixed(2)}GB/${(t / 1e9).toStringAsFixed(2)}GB, ${((a / t) * 100).toStringAsFixed(1)}% free'
-            : 'Storage: Ready';
-      });
+      setState(() => _storageText = t > 0
+          ? 'Storage: ${(a / 1e9).toStringAsFixed(2)}GB/${(t / 1e9).toStringAsFixed(2)}GB, ${((a / t) * 100).toStringAsFixed(1)}% free'
+          : 'Storage: Ready');
     }
   }
 
@@ -92,7 +107,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   Future<void> _submit({required bool startNow}) async {
     final rawUrl = _urlCtrl.text.trim();
     if (rawUrl.isEmpty) return;
-    final fileName = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'download_${DateTime.now().millisecondsSinceEpoch}.$_ext';
+    var fileName = _nameCtrl.text.trim();
+    if (fileName.isEmpty || fileName.startsWith('download_')) {
+      fileName = UrlMetadataHelper.extractCandidateName(rawUrl);
+    }
     final dest = '$_storagePath${Platform.pathSeparator}$fileName';
     final ref = _refCtrl.text.trim();
     final ok = await DownloadService().startDownload(
@@ -144,19 +162,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header without right-side icons
               Text('Download file!', style: AppTypography.displaySm.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
               const SizedBox(height: AppSpacing.x3),
-
-              // 1. Link Section with Resume status & Quick actions
               _buildField(
                 'Link (Resume: ${_supportsResume ? "Yes" : "No"})',
-                TextField(
-                  controller: _urlCtrl,
-                  style: AppTypography.bodyMd.copyWith(color: cs.onSurface),
-                  onSubmitted: _probe,
-                  decoration: _inputDeco(cs),
-                ),
+                TextField(controller: _urlCtrl, style: AppTypography.bodyMd.copyWith(color: cs.onSurface), onSubmitted: _probe, decoration: _inputDeco(cs)),
                 cs,
                 [
                   GestureDetector(
@@ -173,65 +183,34 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 ],
               ),
               const SizedBox(height: AppSpacing.x2),
-
-              // 2. Referer link
-              _buildField(
-                'Download/Referer page link',
-                TextField(
-                  controller: _refCtrl,
-                  style: AppTypography.bodyMd.copyWith(color: cs.onSurface),
-                  decoration: _inputDeco(cs),
-                ),
-                cs,
-                [Icon(PhosphorIcons.caretDown, size: 14, color: cs.onSurfaceVariant)],
-              ),
+              _buildField('Download/Referer page link', TextField(controller: _refCtrl, style: AppTypography.bodyMd.copyWith(color: cs.onSurface), decoration: _inputDeco(cs)), cs, [Icon(PhosphorIcons.caretDown, size: 14, color: cs.onSurfaceVariant)]),
               const SizedBox(height: AppSpacing.x2),
-
-              // 3. Save as with Extension Badge
               _buildField(
                 'Save as:',
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _nameCtrl,
-                        maxLines: 2,
-                        minLines: 1,
-                        style: AppTypography.bodyMd.copyWith(color: cs.onSurface),
-                        decoration: _inputDeco(cs),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(_ext, style: AppTypography.bodySm.copyWith(color: orange, fontWeight: FontWeight.w700)),
-                  ],
-                ),
+                Row(children: [
+                  Expanded(child: TextField(controller: _nameCtrl, maxLines: 2, minLines: 1, style: AppTypography.bodyMd.copyWith(color: cs.onSurface), decoration: _inputDeco(cs))),
+                  const SizedBox(width: 8),
+                  Text(_ext, style: AppTypography.bodySm.copyWith(color: orange, fontWeight: FontWeight.w700)),
+                ]),
                 cs,
               ),
               const SizedBox(height: AppSpacing.x2),
-
-              // 4. File Size & Storage Information
               Text(_sizeText, style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(_storageText, style: AppTypography.bodySm.copyWith(color: orange, fontWeight: FontWeight.w600)),
               const SizedBox(height: AppSpacing.x1),
-
-              // 5. Storage Directory Box
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(AppRadius.card)),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIcons.clockCounterClockwise, size: 18, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_storagePath, style: AppTypography.bodySm.copyWith(color: cs.onSurface), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                    const SizedBox(width: 8),
-                    Icon(PhosphorIcons.folderSimple, size: 18, color: cs.onSurfaceVariant),
-                  ],
-                ),
+                child: Row(children: [
+                  Icon(PhosphorIcons.clockCounterClockwise, size: 18, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_storagePath, style: AppTypography.bodySm.copyWith(color: cs.onSurface), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                  const SizedBox(width: 8),
+                  Icon(PhosphorIcons.folderSimple, size: 18, color: cs.onSurfaceVariant),
+                ]),
               ),
               const SizedBox(height: AppSpacing.x3),
-
-              // 6. Action Buttons: ADD, CANCEL, START
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

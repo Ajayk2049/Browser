@@ -43,6 +43,7 @@ class GeckoBrowserView extends StatefulWidget {
   final ValueChanged<String>? onLocationChanged;
   final ValueChanged<String>? onTitleChanged;
   final ValueChanged<bool>? onCanGoBack;
+  final ValueChanged<bool>? onCanGoForward;
   final void Function(String uri, int code, String category)? onWebResourceError;
 
   const GeckoBrowserView({
@@ -55,6 +56,7 @@ class GeckoBrowserView extends StatefulWidget {
     this.onLocationChanged,
     this.onTitleChanged,
     this.onCanGoBack,
+    this.onCanGoForward,
     this.onWebResourceError,
   });
 
@@ -97,6 +99,10 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
       case 'onCanGoBack':
         final canGoBack = args['canGoBack'] as bool? ?? false;
         widget.onCanGoBack?.call(canGoBack);
+        break;
+      case 'onCanGoForward':
+        final canGoForward = args['canGoForward'] as bool? ?? false;
+        widget.onCanGoForward?.call(canGoForward);
         break;
       case 'onWebResourceError':
         final uri = args['uri'] as String? ?? '';
