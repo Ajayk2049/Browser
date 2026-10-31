@@ -1,6 +1,7 @@
+import '../widgets/gecko_browser_view.dart';
+
 /// Immutable snapshot of one open tab, as rendered by the tabs sheet.
-/// The live, mutable tab state lives in the browser screen; this is the
-/// presentation-only view of it.
+/// Complies with rules.md §13, §29.1, and §29.2 (< 200 lines).
 class BrowserTabInfo {
   final String id;
   final String title;
@@ -19,11 +20,40 @@ class BrowserTabInfo {
     final trimmed = title.trim();
     if (trimmed.isNotEmpty) return trimmed;
 
+    if (url == 'dab.app/home' || url.isEmpty) return 'Explore & Discover';
+
     final host = Uri.tryParse(url)?.host ?? '';
     if (host.isNotEmpty) return host;
 
     return 'New tab';
   }
 
-  String get displayUrl => url.isEmpty ? 'Blank page' : url;
+  String get displayUrl => (url.isEmpty || url == 'dab.app/home') ? 'dab.app/home' : url;
+}
+
+/// Live mutable tab state maintained by the browser screen.
+class BrowserTabSession {
+  BrowserTabSession({
+    required this.id,
+    required this.controller,
+    required this.url,
+  });
+
+  final String id;
+  final GeckoBrowserController controller;
+  String url;
+  String title = '';
+  bool isLoading = false;
+  double progress = 0.0;
+  String? error;
+  bool canGoBack = false;
+
+  bool get isHome => url == 'dab.app/home' || url.isEmpty;
+
+  BrowserTabInfo info({required bool isActive}) => BrowserTabInfo(
+        id: id,
+        title: isHome ? 'Explore & Discover' : title,
+        url: url,
+        isActive: isActive,
+      );
 }

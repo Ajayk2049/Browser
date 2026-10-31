@@ -4,7 +4,7 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 
-/// Actions exposed by the browser's vertical three-dot overflow menu.
+/// Actions exposed by the browser's menu.
 /// Each action owns its label and Phosphor icon so the menu and the handler
 /// cannot drift apart.
 enum BrowserMenuAction {
@@ -22,47 +22,43 @@ enum BrowserMenuAction {
   final String label;
 }
 
-/// Vertical three-dot overflow menu anchored to the omnibox toolbar.
-/// Visual treatment mirrors the search engine picker for consistency.
+/// Material 3 Expressive popup menu of browser actions anchored to a child widget.
+/// Used by the bottom bar's Menu button to present browser actions.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
-class BrowserOverflowMenu extends StatelessWidget {
+class BrowserMenuPopup extends StatelessWidget {
   final ValueChanged<BrowserMenuAction> onSelected;
+  final Widget child;
 
-  const BrowserOverflowMenu({super.key, required this.onSelected});
+  const BrowserMenuPopup({
+    super.key,
+    required this.onSelected,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final menuColor = isDark
+        ? const Color(0xFF1E2433)
+        : colorScheme.surfaceContainerLowest;
+    final borderColor = isDark
+        ? const Color(0xFF2D3748)
+        : colorScheme.outlineVariant.withValues(alpha: 0.5);
 
     return PopupMenuButton<BrowserMenuAction>(
-      tooltip: 'More options',
-      position: PopupMenuPosition.under,
-      offset: const Offset(0, 8),
-      elevation: 4,
+      tooltip: 'Menu',
+      position: PopupMenuPosition.over,
+      offset: const Offset(0, -8),
+      elevation: 6,
       padding: EdgeInsets.zero,
-      color: colorScheme.surfaceContainerLowest,
+      color: menuColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.m3Md),
-        side: BorderSide(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        side: BorderSide(color: borderColor),
       ),
       onSelected: onSelected,
-      // Matches the 44dp omnibox height so the toolbar reads as one row.
-      // Center keeps the glyph at its natural size: a bare SizedBox hands the
-      // Icon tight 44dp constraints, and the ellipsis only inks ~22dp of that
-      // box, which left the dots looking short next to the pill.
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: Icon(
-            PhosphorIcons.dotsThreeVertical,
-            size: 28,
-            color: colorScheme.onSurface,
-          ),
-        ),
-      ),
       itemBuilder: (context) => [
         _item(context, BrowserMenuAction.share),
         _item(context, BrowserMenuAction.bookmarkPage),
@@ -74,6 +70,7 @@ class BrowserOverflowMenu extends StatelessWidget {
         const PopupMenuDivider(height: 1),
         _item(context, BrowserMenuAction.settings),
       ],
+      child: child,
     );
   }
 
@@ -90,11 +87,15 @@ class BrowserOverflowMenu extends StatelessWidget {
         children: [
           Icon(action.icon, size: 20, color: colorScheme.onSurfaceVariant),
           const SizedBox(width: AppSpacing.x3),
-          Text(
-            action.label,
-            style: AppTypography.bodyMd.copyWith(
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
+          Expanded(
+            child: Text(
+              action.label,
+              style: AppTypography.bodyMd.copyWith(
+                fontWeight: FontWeight.w500,
+                color: colorScheme.onSurface,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -102,3 +103,6 @@ class BrowserOverflowMenu extends StatelessWidget {
     );
   }
 }
+
+/// Backwards-compatibility alias.
+typedef BrowserOverflowMenu = BrowserMenuPopup;

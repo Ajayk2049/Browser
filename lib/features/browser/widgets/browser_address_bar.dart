@@ -4,7 +4,6 @@ import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/search_engine.dart';
-import 'browser_overflow_menu.dart';
 import 'browser_tabs_button.dart';
 import 'search_engine_icons.dart';
 
@@ -20,7 +19,6 @@ class BrowserAddressBar extends StatelessWidget {
   final VoidCallback onOpenTabs;
   final int detectedMediaCount;
   final VoidCallback onOpenMediaGrabber;
-  final ValueChanged<BrowserMenuAction>? onMenuAction;
 
   const BrowserAddressBar({
     super.key,
@@ -32,7 +30,6 @@ class BrowserAddressBar extends StatelessWidget {
     required this.onOpenTabs,
     this.detectedMediaCount = 0,
     required this.onOpenMediaGrabber,
-    this.onMenuAction,
   });
 
   @override
@@ -223,10 +220,6 @@ class BrowserAddressBar extends StatelessWidget {
           BrowserTabsButton(
             tabCount: tabCount,
             onPressed: onOpenTabs,
-          ),
-          // Vertical three-dot overflow menu
-          BrowserOverflowMenu(
-            onSelected: onMenuAction ?? (_) {},
           ),
         ],
       ),

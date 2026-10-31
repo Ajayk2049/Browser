@@ -29,7 +29,6 @@ void main() {
             onOpenTabs: () {},
             detectedMediaCount: 3,
             onOpenMediaGrabber: () {},
-            onMenuAction: (_) {},
           ),
         ),
       ),
