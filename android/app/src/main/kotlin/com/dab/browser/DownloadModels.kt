@@ -49,11 +49,18 @@ data class DownloadTask(
         } else 0L
 
     fun toMap(): Map<String, Any?> {
+        val segmentList = synchronized(segments) {
+            segments.map { seg ->
+                if (seg.totalBytes > 0) {
+                    (seg.downloadedBytes.toDouble() / seg.totalBytes.toDouble()).coerceIn(0.0, 1.0)
+                } else 0.0
+            }
+        }
         return mapOf(
             "id" to id,
             "url" to url,
             "destinationPath" to destinationPath,
-            "segmentsCount" to segmentsCount,
+            "segmentsCount" to (if (segments.isNotEmpty()) segments.size else segmentsCount),
             "totalBytes" to totalBytes,
             "downloadedBytes" to downloadedBytes,
             "speedBytesPerSec" to speedBytesPerSec,
@@ -67,7 +74,8 @@ data class DownloadTask(
             "leechers" to leechers,
             "finalUrl" to finalUrl,
             "resolvedContentType" to resolvedContentType,
-            "referer" to referer
+            "referer" to referer,
+            "segmentProgresses" to segmentList
         )
     }
 }

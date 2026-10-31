@@ -12,6 +12,7 @@ class BrowserBottomBar extends StatelessWidget {
   final VoidCallback? onForward;
   final bool canGoForward;
   final VoidCallback onShare;
+  final bool canShare;
   final VoidCallback onHome;
   final bool isHome;
   final int tabCount;
@@ -24,6 +25,7 @@ class BrowserBottomBar extends StatelessWidget {
     this.onForward,
     this.canGoForward = false,
     required this.onShare,
+    this.canShare = false,
     required this.onHome,
     this.isHome = false,
     this.tabCount = 1,
@@ -77,7 +79,8 @@ class BrowserBottomBar extends StatelessWidget {
                 child: _BarItem(
                   icon: PhosphorIcons.shareNetwork,
                   label: 'Share',
-                  onTap: onShare,
+                  enabled: canShare,
+                  onTap: canShare ? onShare : null,
                 ),
               ),
               // 3. Home button in Center

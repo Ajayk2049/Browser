@@ -1,182 +1,136 @@
 package com.dab.browser
 
 import android.Manifest
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
+import android.content.*
 import android.content.pm.PackageManager
-import android.os.Build
-import android.os.IBinder
+import android.os.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.EventChannel
-import io.flutter.plugin.common.MethodChannel
-import kotlinx.coroutines.launch
+import io.flutter.plugin.common.*
+import kotlinx.coroutines.*
+import java.io.File
 
 class MainActivity : FlutterActivity() {
-
     private val methodChannelName = "com.dab/downloader"
     private val eventChannelName = "com.dab/downloads/updates"
-
     private var downloadService: DownloadService? = null
     private var isBound = false
     private var eventSink: EventChannel.EventSink? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as DownloadService.LocalBinder
-            downloadService = binder.getService()
+            downloadService = (service as DownloadService.LocalBinder).getService()
             isBound = true
         }
-
         override fun onServiceDisconnected(name: ComponentName?) {
-            downloadService = null
-            isBound = false
+            downloadService = null; isBound = false
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-
-        // Request POST_NOTIFICATIONS on Android 13+ (API 33+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
         }
 
-        // Register Native GeckoView PlatformView Factory
-        flutterEngine.platformViewsController.registry.registerViewFactory(
-            "com.dab/geckoview",
-            GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger)
-        )
-
-        // Ensure DownloadService is started and bound
+        flutterEngine.platformViewsController.registry.registerViewFactory("com.dab/geckoview", GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger))
         val intent = Intent(this, DownloadService::class.java)
-        startService(intent)
-        bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        startService(intent); bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
-        // 1. MethodChannel for download control
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startDownload" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
+                    val id = call.argument<String>("taskId") ?: ""
                     val url = call.argument<String>("url") ?: ""
-                    val destinationPath = call.argument<String>("destinationPath") ?: ""
-                    val segmentsCount = call.argument<Int>("segmentsCount") ?: 8
+                    val dest = call.argument<String>("destinationPath") ?: ""
+                    val segs = call.argument<Int>("segmentsCount") ?: 8
                     val startNow = call.argument<Boolean>("startNow") ?: true
-                    val referer = call.argument<String>("referer")
-
-                    if (taskId.isNotEmpty() && url.isNotEmpty() && destinationPath.isNotEmpty()) {
-                        downloadService?.startDownload(taskId, url, destinationPath, segmentsCount, startNow, referer)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGS", "Missing required download arguments", null)
+                    val ref = call.argument<String>("referer")
+                    if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
+                        downloadService?.startDownload(id, url, dest, segs, startNow, ref); result.success(true)
+                    } else result.error("INVALID_ARGS", "Missing args", null)
+                }
+                "getPublicDownloadDirectory" -> {
+                    val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    val dabFolder = File(publicDir, "Dab Browser")
+                    if (!dabFolder.exists()) dabFolder.mkdirs()
+                    result.success(dabFolder.absolutePath)
+                }
+                "requestStoragePermission" -> {
+                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+                        val hasRead = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        val hasWrite = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        if (!hasRead || !hasWrite) {
+                            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 102)
+                        }
                     }
+                    result.success(true)
                 }
                 "probeUrl" -> {
                     val url = call.argument<String>("url") ?: ""
-                    val referer = call.argument<String>("referer")
+                    val ref = call.argument<String>("referer")
                     if (url.isNotEmpty()) {
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                            val probe = DownloadHttpHelper.probeUrl(url, referer)
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val probe = DownloadHttpHelper.probeUrl(url, ref)
                             runOnUiThread { result.success(probe.toMap()) }
                         }
-                    } else {
-                        result.error("INVALID_ARGS", "Missing url", null)
-                    }
+                    } else result.error("INVALID_ARGS", "Missing url", null)
                 }
                 "getDiskSpace" -> {
                     val path = call.argument<String>("path") ?: getExternalFilesDir(null)?.path ?: filesDir.path
                     try {
-                        val stat = android.os.StatFs(path)
+                        val stat = StatFs(path)
                         result.success(mapOf("available" to stat.availableBytes, "total" to stat.totalBytes))
-                    } catch (_: Exception) {
-                        result.success(mapOf("available" to 0L, "total" to 0L))
-                    }
+                    } catch (_: Exception) { result.success(mapOf("available" to 0L, "total" to 0L)) }
                 }
-                "pauseDownload" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    downloadService?.pauseDownload(taskId)
-                    result.success(true)
-                }
-                "resumeDownload" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    downloadService?.resumeDownload(taskId)
-                    result.success(true)
-                }
-                "cancelDownload" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    downloadService?.cancelDownload(taskId)
-                    result.success(true)
-                }
-                "pauseAll" -> {
-                    downloadService?.pauseAll()
-                    result.success(true)
-                }
-                "resumeAll" -> {
-                    downloadService?.resumeAll()
-                    result.success(true)
-                }
+                "pauseDownload" -> { downloadService?.pauseDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
+                "resumeDownload" -> { downloadService?.resumeDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
+                "cancelDownload" -> { downloadService?.cancelDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
+                "pauseAll" -> { downloadService?.pauseAll(); result.success(true) }
+                "resumeAll" -> { downloadService?.resumeAll(); result.success(true) }
                 "scheduleSeeding" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    val wifiOnly = call.argument<Boolean>("wifiOnly") ?: true
-                    val requiresCharging = call.argument<Boolean>("requiresCharging") ?: true
-                    TorrentSeedingWorker.schedule(applicationContext, taskId, wifiOnly, requiresCharging)
+                    TorrentSeedingWorker.schedule(applicationContext, call.argument<String>("taskId") ?: "", call.argument<Boolean>("wifiOnly") ?: true, call.argument<Boolean>("requiresCharging") ?: true)
                     result.success(true)
                 }
-                "stopSeeding" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    TorrentSeedingWorker.stop(applicationContext, taskId)
-                    result.success(true)
-                }
-                "setMaxConcurrent" -> {
-                    val limit = call.argument<Int>("limit") ?: 3
-                    downloadService?.setMaxConcurrent(limit)
-                    result.success(true)
-                }
+                "stopSeeding" -> { TorrentSeedingWorker.stop(applicationContext, call.argument<String>("taskId") ?: ""); result.success(true) }
+                "setMaxConcurrent" -> { downloadService?.setMaxConcurrent(call.argument<Int>("limit") ?: 3); result.success(true) }
                 "setSpeedLimit" -> {
-                    val taskId = call.argument<String?>("taskId")
-                    val bytesPerSec = (call.argument<Number>("bytesPerSec") ?: 0L).toLong()
-                    downloadService?.setSpeedLimit(taskId, bytesPerSec)
+                    downloadService?.setSpeedLimit(call.argument<String?>("taskId"), (call.argument<Number>("bytesPerSec") ?: 0L).toLong())
                     result.success(true)
                 }
-                "getTasks" -> {
-                    val tasks = DownloadService.allTasks.values.map { it.toMap() }
-                    result.success(tasks)
+                "getTasks" -> result.success(DownloadService.allTasks.values.map { it.toMap() })
+                "shareUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    val title = call.argument<String>("title") ?: ""
+                    if (url.isNotEmpty()) {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url)
+                            if (title.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, title)
+                        }
+                        val shareIntent = Intent.createChooser(sendIntent, "Share via").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(shareIntent); result.success(true)
+                    } else result.error("INVALID_URL", "URL is empty", null)
                 }
                 else -> result.notImplemented()
             }
         }
 
-        // 2. EventChannel for progress stream
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventChannelName).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
-                    DownloadService.onProgressCallback = { task ->
-                        runOnUiThread {
-                            eventSink?.success(task.toMap())
-                        }
-                    }
+                    DownloadService.onProgressCallback = { task -> runOnUiThread { eventSink?.success(task.toMap()) } }
                 }
-
-                override fun onCancel(arguments: Any?) {
-                    eventSink = null
-                    DownloadService.onProgressCallback = null
-                }
+                override fun onCancel(arguments: Any?) { eventSink = null; DownloadService.onProgressCallback = null }
             }
         )
     }
 
     override fun onDestroy() {
-        if (isBound) {
-            unbindService(connection)
-            isBound = false
-        }
+        if (isBound) { unbindService(connection); isBound = false }
         super.onDestroy()
     }
 }

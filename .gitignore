@@ -34,6 +34,7 @@ migrate_working_dir/
 # Rules / Personal Tracking / Env / Code Gen (§3.3 & §32.5)
 progress.md
 brain/
+.cache/
 .env*
 env/
 *.g.dart

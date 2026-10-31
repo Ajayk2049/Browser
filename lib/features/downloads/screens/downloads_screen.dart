@@ -11,6 +11,7 @@ import '../models/download_task.dart';
 import '../services/download_service.dart';
 import '../utils/url_metadata_helper.dart';
 import '../widgets/add_download_dialog.dart';
+import '../widgets/delete_download_dialog.dart';
 import '../widgets/download_speed_dial_fab.dart';
 import '../widgets/download_storage_card.dart';
 import '../widgets/download_task_card.dart';
@@ -108,6 +109,17 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     if (mounted) unawaited(AddDownloadDialog.show(context, initialUrl: text));
   }
 
+  void _showDeleteConfirmDialog(DownloadTask task) {
+    DeleteDownloadDialog.show(
+      context,
+      task: task,
+      service: _service,
+      onDeleted: () {
+        if (mounted) setState(() => _tasks.remove(task.id));
+      },
+    );
+  }
+
   List<DownloadTask> _getFilteredTasks() {
     final list = _tasks.values.toList();
     switch (_selectedFilter) {
@@ -180,10 +192,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                 for (final task in filteredTasks) ...[
                   DownloadTaskCard(
                     task: task,
-                    onDelete: () {
-                      _service.cancelDownload(task.id);
-                      setState(() => _tasks.remove(task.id));
-                    },
+                    onDelete: () => _showDeleteConfirmDialog(task),
+                    onLongPress: () => _showDeleteConfirmDialog(task),
                   ),
                   const SizedBox(height: AppSpacing.x3),
                 ],

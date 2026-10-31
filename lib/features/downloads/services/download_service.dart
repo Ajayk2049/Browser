@@ -34,24 +34,13 @@ class DownloadService {
   }
 
   /// Listens to the progress stream and logs structured progress to console.
-  /// Proves engine functionality without needing UI (Phase 2).
   void _initLoggingSubscriber() {
     downloadUpdates.listen(
-      (task) {
-        developer.log(
-          '[DownloadEngine] Task: ${task.id} | Status: ${task.status.name} | '
-          'Progress: ${task.progressPercentage} (${task.downloadedBytes}/${task.totalBytes} bytes) | '
-          'Speed: ${task.speedFormatted}',
-          name: 'Downloader',
-        );
-      },
-      onError: (dynamic error) {
-        developer.log(
-          '[DownloadEngine] Error in download event stream: $error',
-          name: 'Downloader',
-          error: error,
-        );
-      },
+      (task) => developer.log(
+        '[Downloader] ${task.id}: ${task.progressPercentage} | ${task.speedFormatted}',
+        name: 'Downloader',
+      ),
+      onError: (dynamic error) => developer.log('Error: $error', name: 'Downloader', error: error),
     );
   }
 
@@ -65,17 +54,14 @@ class DownloadService {
     String? referer,
   }) async {
     try {
-      final success = await _methodChannel.invokeMethod<bool>(
-        'startDownload',
-        {
-          'taskId': taskId,
-          'url': url,
-          'destinationPath': destinationPath,
-          'segmentsCount': segmentsCount,
-          'startNow': startNow,
-          'referer': ?referer,
-        },
-      );
+      final success = await _methodChannel.invokeMethod<bool>('startDownload', {
+        'taskId': taskId,
+        'url': url,
+        'destinationPath': destinationPath,
+        'segmentsCount': segmentsCount,
+        'startNow': startNow,
+        'referer': ?referer,
+      });
       return success ?? false;
     } on PlatformException catch (e) {
       developer.log('Failed to start download: ${e.message}', name: 'Downloader', error: e);
@@ -96,6 +82,25 @@ class DownloadService {
       };
     } catch (_) {
       return {'available': 0, 'total': 0};
+    }
+  }
+
+  /// Returns the public shared storage directory (e.g. /storage/emulated/0/Download/Dab Browser)
+  Future<String?> getPublicDownloadDirectory() async {
+    try {
+      return await _methodChannel.invokeMethod<String>('getPublicDownloadDirectory');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Requests Android runtime storage permission if applicable.
+  Future<bool> requestStoragePermission() async {
+    try {
+      final res = await _methodChannel.invokeMethod<bool>('requestStoragePermission');
+      return res ?? true;
+    } catch (_) {
+      return true;
     }
   }
 

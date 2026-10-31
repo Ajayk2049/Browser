@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import '../../../theme/tokens/app_radius.dart';
-import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
 import '../models/browser_tab.dart';
+import 'tab_favicon.dart';
 
-/// Tab manager presented as a bottom sheet.
-///
-/// Lists every open tab, highlights the active one, and offers switching,
-/// closing, and opening a new tab. Purely presentational — the browser screen
-/// owns the tab list and reacts to [onSelect], [onClose] and [onNewTab].
-class BrowserTabsSheet extends StatelessWidget {
+/// Modal bottom sheet for managing tabs matching Figma specification.
+class BrowserTabsSheet extends StatefulWidget {
   final List<BrowserTabInfo> tabs;
   final ValueChanged<String> onSelect;
   final ValueChanged<String> onClose;
@@ -25,19 +20,32 @@ class BrowserTabsSheet extends StatelessWidget {
   });
 
   @override
+  State<BrowserTabsSheet> createState() => _BrowserTabsSheetState();
+}
+
+class _BrowserTabsSheetState extends State<BrowserTabsSheet> {
+  int _seg = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final bg = dark ? const Color(0xFF131620) : const Color(0xFFFFFFFF);
+    final border = dark ? const Color(0xFF1E2433) : const Color(0xFFE2E8F0);
+    final handle = dark ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
 
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+        minHeight: 380,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.75,
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerLow,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppRadius.m3Xl),
-          ),
+          color: bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: border)),
+          boxShadow: const [
+            BoxShadow(color: Color(0x1A0F172A), offset: Offset(0, -8), blurRadius: 24),
+          ],
         ),
         child: SafeArea(
           top: false,
@@ -45,63 +53,36 @@ class BrowserTabsSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.x3),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Container(
-                  width: 32,
+                  width: 36,
                   height: 4,
-                  decoration: BoxDecoration(
-                    color: colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
+                  decoration: BoxDecoration(color: handle, borderRadius: BorderRadius.circular(2)),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.x4,
-                  AppSpacing.x3,
-                  AppSpacing.x2,
-                  AppSpacing.x2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Tabs',
-                      style: AppTypography.displaySm.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.x2),
-                    _CountBadge(count: tabs.length),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: onNewTab,
-                      icon: const Icon(PhosphorIcons.plus, size: 18),
-                      label: const Text('New tab'),
-                    ),
+                    _SegControl(dark: dark, count: widget.tabs.length, seg: _seg, onSeg: (i) => setState(() => _seg = i)),
+                    _NewTabBtn(dark: dark, onTap: widget.onNewTab),
                   ],
                 ),
               ),
+              const SizedBox(height: 14),
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.x4,
-                    0,
-                    AppSpacing.x4,
-                    AppSpacing.x4,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: widget.tabs.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) => TabItemTile(
+                    tab: widget.tabs[i],
+                    dark: dark,
+                    onSelect: () => widget.onSelect(widget.tabs[i].id),
+                    onClose: () => widget.onClose(widget.tabs[i].id),
                   ),
-                  itemCount: tabs.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.x2),
-                  itemBuilder: (context, index) {
-                    final tab = tabs[index];
-                    return _TabTile(
-                      tab: tab,
-                      onSelect: () => onSelect(tab.id),
-                      onClose: () => onClose(tab.id),
-                    );
-                  },
                 ),
               ),
             ],
@@ -112,120 +93,105 @@ class BrowserTabsSheet extends StatelessWidget {
   }
 }
 
-class _CountBadge extends StatelessWidget {
+class _SegControl extends StatelessWidget {
+  final bool dark;
   final int count;
+  final int seg;
+  final ValueChanged<int> onSeg;
 
-  const _CountBadge({required this.count});
+  const _SegControl({required this.dark, required this.count, required this.seg, required this.onSeg});
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
+    final bg = dark ? const Color(0xFF1A1F2C) : const Color(0xFFF1F5F9);
+    final brd = dark ? const Color(0xFF272E3F) : const Color(0xFFE2E8F0);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x2, vertical: 2),
-      decoration: BoxDecoration(
-        color: colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18), border: Border.all(color: brd)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Btn('Tabs', PhosphorIcons.browsers, count, seg == 0, dark, () => onSeg(0)),
+          const SizedBox(width: 4),
+          _Btn('Private', PhosphorIcons.eyeglasses, null, seg == 1, dark, () => onSeg(1)),
+        ],
       ),
-      child: Text(
-        '$count',
-        style: AppTypography.bodyXs.copyWith(
-          fontWeight: FontWeight.w700,
-          color: colorScheme.onSecondaryContainer,
+    );
+  }
+}
+
+class _Btn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final int? count;
+  final bool active;
+  final bool dark;
+  final VoidCallback onTap;
+
+  const _Btn(this.label, this.icon, this.count, this.active, this.dark, this.onTap);
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = active ? (dark ? const Color(0xFF242C3F) : const Color(0xFFFFFFFF)) : Colors.transparent;
+    final shadows = active && !dark
+        ? const [BoxShadow(color: Color(0x140F172A), offset: Offset(0, 1), blurRadius: 3)]
+        : null;
+    final fg = active
+        ? (dark ? const Color(0xFFFFFFFF) : const Color(0xFF0F172A))
+        : (dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B));
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(15), boxShadow: shadows),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 6),
+            Text(label, style: AppTypography.bodySm.copyWith(color: fg, fontWeight: active ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
+            if (count != null) ...[
+              const SizedBox(width: 6),
+              Text('$count', style: AppTypography.bodyXs.copyWith(color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 11)),
+            ],
+          ],
         ),
       ),
     );
   }
 }
 
-class _TabTile extends StatelessWidget {
-  final BrowserTabInfo tab;
-  final VoidCallback onSelect;
-  final VoidCallback onClose;
+class _NewTabBtn extends StatelessWidget {
+  final bool dark;
+  final VoidCallback onTap;
 
-  const _TabTile({
-    required this.tab,
-    required this.onSelect,
-    required this.onClose,
-  });
+  const _NewTabBtn({required this.dark, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final bg = dark ? const Color(0xFFEDF0F6) : const Color(0xFF0F172A);
+    final fg = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+    final brd = dark ? const Color(0xFF3B4B6E) : Colors.transparent;
 
     return Material(
-      color: tab.isActive
-          ? colorScheme.secondaryContainer.withValues(alpha: 0.5)
-          : colorScheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(AppRadius.m3Lg),
+      color: bg,
+      shape: StadiumBorder(side: BorderSide(color: brd)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onSelect,
+        onTap: onTap,
         child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.m3Lg),
-            border: Border.all(
-              color: tab.isActive
-                  ? colorScheme.primary.withValues(alpha: 0.6)
-                  : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.x3,
-            vertical: AppSpacing.x3,
-          ),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                PhosphorIcons.globeSimple,
-                size: 20,
-                color: tab.isActive
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: AppSpacing.x3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tab.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyMd.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      tab.displayUrl,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.bodyXs.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.x2),
-              IconButton(
-                tooltip: 'Close tab',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 36,
-                  height: 36,
-                ),
-                icon: Icon(
-                  PhosphorIcons.x,
-                  size: 16,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                onPressed: onClose,
-              ),
+              Icon(PhosphorIcons.plusBold, size: 14, color: fg),
+              const SizedBox(width: 6),
+              Text('New Tab', style: AppTypography.bodySm.copyWith(color: fg, fontWeight: FontWeight.w600, fontSize: 13)),
             ],
           ),
         ),

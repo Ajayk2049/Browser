@@ -26,6 +26,15 @@ class GeckoPlatformView(
         session.open(runtime!!)
         geckoView.setSession(session)
 
+        geckoView.isFocusable = true
+        geckoView.isFocusableInTouchMode = true
+        geckoView.setOnTouchListener { v, _ ->
+            if (!v.hasFocus()) {
+                v.requestFocus()
+            }
+            false
+        }
+
         setupDelegates()
 
         val initialUrl = creationParams?.get("initialUrl") as? String
@@ -114,4 +123,3 @@ class GeckoPlatformView(
         geckoView.releaseSession()
     }
 }
-

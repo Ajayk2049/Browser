@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../theme/tokens/app_radius.dart';
 import '../../downloads/downloads.dart';
@@ -45,7 +46,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   void initState() {
     super.initState();
-    _urlController = TextEditingController(text: _homeUrl);
+    _urlController = TextEditingController(text: '');
     _activeTabId = _createTab().id;
     BookmarksService.instance.init();
     BookmarksService.instance.addListener(_syncData);
@@ -78,7 +79,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (resolvedUrl.isEmpty) return;
     final uri = Uri.tryParse(resolvedUrl);
     if (uri == null) return;
-
     if (UrlHelper.isDownloadable(resolvedUrl)) {
       _promptDownload(uri);
     } else {
@@ -89,8 +89,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _loadHome() {
     setState(() {
-      _activeTab..url = _homeUrl..title = 'Explore & Discover'..error = null..isLoading = false..canGoForward = false;
-      _urlController.text = _homeUrl;
+      _activeTab..url = _homeUrl..title = 'Home'..error = null..isLoading = false..canGoForward = false;
+      _urlController.text = '';
       _detectedMedia.clear();
     });
   }
@@ -108,12 +108,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _selectTab(String id) {
     if (id == _activeTabId) return;
     final tab = _tabs.firstWhere((t) => t.id == id);
-    setState(() { _activeTabId = id; _urlController.text = tab.isHome ? _homeUrl : tab.url; _detectedMedia.clear(); });
+    setState(() { _activeTabId = id; _urlController.text = tab.isHome ? '' : tab.url; _detectedMedia.clear(); });
   }
 
   void _newTab() {
     final tab = _createTab();
-    setState(() { _activeTabId = tab.id; _urlController.text = _homeUrl; _detectedMedia.clear(); });
+    setState(() { _activeTabId = tab.id; _urlController.text = ''; _detectedMedia.clear(); });
   }
 
   void _closeTab(String id) {
@@ -122,7 +122,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (index < 0) return;
       _tabs.removeAt(index);
       _activeTabId = _tabs.isEmpty ? _createTab().id : (_activeTabId == id ? _tabs[index < _tabs.length ? index : _tabs.length - 1].id : _activeTabId);
-      _urlController.text = _activeTab.url;
+      _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
       _detectedMedia.clear();
     });
   }
@@ -179,9 +179,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _sharePage() {
-    final url = _activeTab.url;
-    if (url.isEmpty || _activeTab.isHome) return;
-    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text('Sharing: $url'), behavior: SnackBarBehavior.floating));
+    if (_activeTab.url.isEmpty || _activeTab.isHome) return;
+    const MethodChannel('com.dab/downloader').invokeMethod('shareUrl', {'url': _activeTab.url, 'title': _activeTab.title});
   }
 
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
@@ -226,6 +225,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 onOpenMediaGrabber: _openMediaGrabber,
                 selectedEngine: _selectedEngine,
                 onEngineChanged: (e) => setState(() => _selectedEngine = e),
+                isHome: _activeTab.isHome,
               ),
               if (_activeTab.isLoading)
                 LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
@@ -244,6 +244,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           canGoForward: _activeTab.canGoForward,
           onForward: () => _activeTab.controller.goForward(),
           onShare: _sharePage,
+          canShare: !_activeTab.isHome && _activeTab.url.isNotEmpty,
           isHome: _activeTab.isHome,
           onHome: _loadHome,
           tabCount: _tabs.length,

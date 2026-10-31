@@ -76,9 +76,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   }
 
   Future<void> _initStorage() async {
-    final dir = await getApplicationDocumentsDirectory();
-    _storagePath = dir.path;
-    final space = await DownloadService().getDiskSpace(dir.path);
+    await DownloadService().requestStoragePermission();
+    final publicDir = await DownloadService().getPublicDownloadDirectory();
+    final targetPath = publicDir ?? (await getApplicationDocumentsDirectory()).path;
+    _storagePath = targetPath;
+    final space = await DownloadService().getDiskSpace(targetPath);
     final a = space['available'] ?? 0, t = space['total'] ?? 0;
     if (mounted) {
       setState(() => _storageText = t > 0

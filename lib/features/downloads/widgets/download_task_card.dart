@@ -12,11 +12,13 @@ import '../services/download_service.dart';
 class DownloadTaskCard extends StatelessWidget {
   final DownloadTask task;
   final VoidCallback onDelete;
+  final VoidCallback? onLongPress;
 
   const DownloadTaskCard({
     super.key,
     required this.task,
     required this.onDelete,
+    this.onLongPress,
   });
 
   String _getFileName() {
@@ -67,64 +69,72 @@ class DownloadTaskCard extends StatelessWidget {
         task.status == DownloadStatus.paused ||
         task.status == DownloadStatus.queued;
 
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.x4),
-      decoration: BoxDecoration(
-        color: cardBg,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: borderColor, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.x4),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(fileIcon, size: 20, color: iconColor),
-              ),
-              const SizedBox(width: AppSpacing.x3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      fileName,
-                      style: AppTypography.bodyMd.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: textColor,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: iconBg,
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _buildSubtitle(isCompleted),
-                      style: AppTypography.bodySm.copyWith(
-                        color: subColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Icon(fileIcon, size: 20, color: iconColor),
+                  ),
+                  const SizedBox(width: AppSpacing.x3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fileName,
+                          style: AppTypography.bodyMd.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: textColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _buildSubtitle(isCompleted),
+                          style: AppTypography.bodySm.copyWith(
+                            color: subColor,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: AppSpacing.x2),
+                  _buildTrailingAction(isCompleted, textColor, subColor),
+                ],
               ),
-              const SizedBox(width: AppSpacing.x2),
-              _buildTrailingAction(isCompleted, textColor, subColor),
+              if (isActive) ...[
+                const SizedBox(height: AppSpacing.x3),
+                _buildMultithreadedChunks(trackColor, fillColor),
+              ],
             ],
           ),
-          if (isActive) ...[
-            const SizedBox(height: AppSpacing.x3),
-            _buildMultithreadedChunks(trackColor, fillColor),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -136,9 +146,9 @@ class DownloadTaskCard extends StatelessWidget {
     }
     final dl = task.downloadedSizeFormatted;
     final total = task.fileSizeFormatted;
-    final threads = '${task.segmentsCount} Threads';
     final speed = task.speedFormatted;
-    return '$dl / $total • $threads • $speed';
+    final eta = task.etaFormatted;
+    return '$dl / $total • $speed • $eta left';
   }
 
   Widget _buildTrailingAction(bool isCompleted, Color textColor, Color subColor) {

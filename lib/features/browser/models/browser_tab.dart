@@ -21,7 +21,7 @@ class BrowserTabInfo {
     if (trimmed.isNotEmpty) return trimmed;
 
     if (url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty) {
-      return 'Explore & Discover';
+      return 'Home';
     }
 
     final host = Uri.tryParse(url)?.host ?? '';

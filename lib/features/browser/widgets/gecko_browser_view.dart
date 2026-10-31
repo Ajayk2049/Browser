@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 /// Controller for interacting with native Mozilla GeckoView.
-/// Complies with rules.md §25.1, §25.2, §25.7, and §29.2 (< 200 lines).
 class GeckoBrowserController {
   MethodChannel? _channel;
 
@@ -32,8 +33,7 @@ class GeckoBrowserController {
   }
 }
 
-/// Native AndroidView embedding official Mozilla GeckoView.
-/// Replaces unmaintained third-party wrapper and solves the onWebResourceError blocking bug.
+/// Native AndroidView embedding official Mozilla GeckoView with Hybrid Composition.
 class GeckoBrowserView extends StatefulWidget {
   final String initialUrl;
   final GeckoBrowserController controller;
@@ -77,38 +77,32 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
     final args = (call.arguments as Map?) ?? const {};
     switch (call.method) {
       case 'onPageStart':
-        final url = args['url'] as String? ?? '';
-        widget.onPageStarted?.call(url);
+        widget.onPageStarted?.call(args['url'] as String? ?? '');
         break;
       case 'onPageStop':
-        final success = args['success'] as bool? ?? true;
-        widget.onPageFinished?.call(success);
+        widget.onPageFinished?.call(args['success'] as bool? ?? true);
         break;
       case 'onProgressChange':
-        final progress = (args['progress'] as num?)?.toInt() ?? 0;
-        widget.onProgressChanged?.call(progress);
+        widget.onProgressChanged?.call((args['progress'] as num?)?.toInt() ?? 0);
         break;
       case 'onLocationChange':
-        final url = args['url'] as String? ?? '';
-        widget.onLocationChanged?.call(url);
+        widget.onLocationChanged?.call(args['url'] as String? ?? '');
         break;
       case 'onTitleChange':
-        final title = args['title'] as String? ?? '';
-        widget.onTitleChanged?.call(title);
+        widget.onTitleChanged?.call(args['title'] as String? ?? '');
         break;
       case 'onCanGoBack':
-        final canGoBack = args['canGoBack'] as bool? ?? false;
-        widget.onCanGoBack?.call(canGoBack);
+        widget.onCanGoBack?.call(args['canGoBack'] as bool? ?? false);
         break;
       case 'onCanGoForward':
-        final canGoForward = args['canGoForward'] as bool? ?? false;
-        widget.onCanGoForward?.call(canGoForward);
+        widget.onCanGoForward?.call(args['canGoForward'] as bool? ?? false);
         break;
       case 'onWebResourceError':
-        final uri = args['uri'] as String? ?? '';
-        final code = (args['code'] as num?)?.toInt() ?? 0;
-        final category = args['category'] as String? ?? '';
-        widget.onWebResourceError?.call(uri, code, category);
+        widget.onWebResourceError?.call(
+          args['uri'] as String? ?? '',
+          (args['code'] as num?)?.toInt() ?? 0,
+          args['category'] as String? ?? '',
+        );
         break;
     }
   }
@@ -126,12 +120,35 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
       return const Center(child: Text('GeckoView is supported on Android only'));
     }
 
-    return AndroidView(
-      viewType: 'com.dab/geckoview',
-      creationParams: {'initialUrl': widget.initialUrl},
-      creationParamsCodec: const StandardMessageCodec(),
-      onPlatformViewCreated: _onPlatformViewCreated,
+    const viewType = 'com.dab/geckoview';
+    final creationParams = {'initialUrl': widget.initialUrl};
+
+    return PlatformViewLink(
+      viewType: viewType,
+      surfaceFactory: (context, controller) {
+        return AndroidViewSurface(
+          controller: controller as AndroidViewController,
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+            Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+          },
+          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        );
+      },
+      onCreatePlatformView: (params) {
+        return PlatformViewsService.initExpensiveAndroidView(
+          id: params.id,
+          viewType: viewType,
+          layoutDirection: TextDirection.ltr,
+          creationParams: creationParams,
+          creationParamsCodec: const StandardMessageCodec(),
+          onFocus: () => params.onFocusChanged(true),
+        )
+          ..addOnPlatformViewCreatedListener((id) {
+            params.onPlatformViewCreated(id);
+            _onPlatformViewCreated(id);
+          })
+          ..create();
+      },
     );
   }
 }
-
