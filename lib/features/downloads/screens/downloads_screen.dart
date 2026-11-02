@@ -14,6 +14,8 @@ import '../widgets/delete_download_dialog.dart';
 import '../widgets/download_speed_dial_fab.dart';
 import '../widgets/download_storage_card.dart';
 import '../widgets/download_task_card.dart';
+import 'direct_download_details_screen.dart';
+import 'torrent_details_screen.dart';
 
 enum DownloadFilter { all, media, documents, archives }
 
@@ -192,6 +194,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                 for (final task in filteredTasks) ...[
                   DownloadTaskCard(
                     task: task,
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => task.isTorrent ? TorrentDetailsScreen(initialTask: task) : DirectDownloadDetailsScreen(initialTask: task),
+                    )),
                     onDelete: () => _showDeleteConfirmDialog(task),
                     onLongPress: () => _showDeleteConfirmDialog(task),
                   ),

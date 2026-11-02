@@ -84,35 +84,37 @@ class BrowserHomeView extends StatelessWidget {
                   'No bookmarks yet. Tap the star icon to save pages.',
                 ),
               ],
-              const SizedBox(height: AppSpacing.x6),
-              _buildSectionHeader(
-                title: 'Saved Pages',
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: Text(
-                    '${savedPages.length} saved',
-                    style: AppTypography.bodyXs.copyWith(
-                      color: isDark ? Colors.white70 : colorScheme.onSurfaceVariant,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
+              if (hs.showSavedPages) ...[
+                const SizedBox(height: AppSpacing.x6),
+                _buildSectionHeader(
+                  title: 'Saved Pages',
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text(
+                      '${savedPages.length} saved',
+                      style: AppTypography.bodyXs.copyWith(
+                        color: isDark ? Colors.white70 : colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
+                  colorScheme: colorScheme,
                 ),
-                colorScheme: colorScheme,
-              ),
-              const SizedBox(height: AppSpacing.x2),
-              _buildCardList(
-                savedPages,
-                cardBg,
-                borderColor,
-                colorScheme,
-                PhosphorIcons.article,
-                'No saved offline pages yet.',
-              ),
+                const SizedBox(height: AppSpacing.x2),
+                _buildCardList(
+                  savedPages,
+                  cardBg,
+                  borderColor,
+                  colorScheme,
+                  PhosphorIcons.article,
+                  'No saved offline pages yet.',
+                ),
+              ],
             ],
           ),
         );

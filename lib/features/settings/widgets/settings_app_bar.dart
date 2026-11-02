@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-/// Top header bar matching Figma header design.
+/// Top header bar matching the circular button aesthetic of Download Manager.
 /// Complies with rules.md §13, §29.2 (< 250 lines).
 class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onBack;
   final VoidCallback? onSearch;
+  final VoidCallback? onMore;
+  final Widget? customTrailing;
   final String title;
   final bool showSearch;
 
@@ -13,6 +15,8 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.onBack,
     this.onSearch,
+    this.onMore,
+    this.customTrailing,
     this.title = 'Settings',
     this.showSearch = true,
   });
@@ -23,11 +27,7 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final btnBg = isDark ? const Color(0xFF1E2433) : const Color(0xFFF1F5F9);
-    final btnBorder = isDark ? const Color(0xFF2A3245) : const Color(0xFFE2E8F0);
-    final iconColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final fgColor = isDark ? Colors.white : const Color(0xFF0F172A);
 
     return SafeArea(
       bottom: false,
@@ -36,18 +36,13 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Row(
           children: [
-            // Squircle Back Button (36x36dp)
-            _SquircleButton(
+            // Circular Back Button (40x40dp matching Download Manager)
+            _CircleButton(
               onTap: onBack,
-              bgColor: btnBg,
-              borderColor: btnBorder,
-              child: Icon(
-                PhosphorIcons.caretLeft,
-                size: 20.0,
-                color: iconColor,
-              ),
+              isDark: isDark,
+              child: Icon(PhosphorIcons.caretLeft, size: 20.0, color: fgColor),
             ),
-            // Title (17px Inter / Roboto Flex, w600)
+            // Centered Title
             Expanded(
               child: Center(
                 child: Text(
@@ -56,26 +51,29 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
                     fontFamily: 'Inter',
                     fontSize: 17.0,
                     fontWeight: FontWeight.w600,
-                    color: titleColor,
+                    color: fgColor,
                     letterSpacing: -0.2,
                   ),
                 ),
               ),
             ),
-            // Squircle Search Button or placeholder to keep title centered
-            if (showSearch)
-              _SquircleButton(
+            // Trailing action or placeholder to keep title centered
+            if (customTrailing != null)
+              customTrailing!
+            else if (onMore != null)
+              _CircleButton(
+                onTap: onMore,
+                isDark: isDark,
+                child: Icon(PhosphorIcons.dotsThreeVertical, size: 20.0, color: fgColor),
+              )
+            else if (showSearch)
+              _CircleButton(
                 onTap: onSearch,
-                bgColor: btnBg,
-                borderColor: btnBorder,
-                child: Icon(
-                  PhosphorIcons.magnifyingGlass,
-                  size: 18.0,
-                  color: iconColor,
-                ),
+                isDark: isDark,
+                child: Icon(PhosphorIcons.magnifyingGlass, size: 20.0, color: fgColor),
               )
             else
-              const SizedBox(width: 36.0),
+              const SizedBox(width: 40.0),
           ],
         ),
       ),
@@ -83,36 +81,34 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-class _SquircleButton extends StatelessWidget {
+class _CircleButton extends StatelessWidget {
   final VoidCallback? onTap;
-  final Color bgColor;
-  final Color borderColor;
+  final bool isDark;
   final Widget child;
 
-  const _SquircleButton({
+  const _CircleButton({
     required this.onTap,
-    required this.bgColor,
-    required this.borderColor,
+    required this.isDark,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10.0),
-        child: Ink(
-          width: 36.0,
-          height: 36.0,
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(10.0),
-            border: Border.all(color: borderColor, width: 1.0),
-          ),
-          child: Center(child: child),
-        ),
+    final bg = isDark ? const Color(0xFF131722) : Colors.white;
+    final border = isDark ? const Color(0xFF1E293B) : const Color(0xFFEDF0F5);
+
+    return Container(
+      width: 40.0,
+      height: 40.0,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: border),
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        icon: child,
+        onPressed: onTap,
       ),
     );
   }

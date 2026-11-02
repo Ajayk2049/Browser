@@ -27,8 +27,9 @@ class SearchEngineSettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: SettingsAppBar(
+        title: 'Search Engine',
+        showSearch: false,
         onBack: () => Navigator.of(context).maybePop(),
-        onSearch: () {},
       ),
       body: ListenableBuilder(
         listenable: SearchEngineSettingsService.instance,

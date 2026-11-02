@@ -18,8 +18,9 @@ class HomepageSettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: SettingsAppBar(
+        title: 'Homepage',
+        showSearch: false,
         onBack: () => Navigator.of(context).maybePop(),
-        onSearch: () {},
       ),
       body: ListenableBuilder(
         listenable: HomepageSettingsService.instance,
@@ -93,14 +94,14 @@ class HomepageSettingsScreen extends StatelessWidget {
                     },
                   ),
                   SettingsRowItem(
-                    icon: PhosphorIcons.magnifyingGlass,
-                    title: 'Show search bar',
-                    subtitle: 'Search from your homepage',
-                    trailing: _buildSwitch(s.showSearchBar, isDark, (val) {
-                      HomepageSettingsService.instance.updateSettings((cur) => cur.copyWith(showSearchBar: val));
+                    icon: PhosphorIcons.floppyDiskBack,
+                    title: 'Show saved pages',
+                    subtitle: 'Show saved pages on homepage',
+                    trailing: _buildSwitch(s.showSavedPages, isDark, (val) {
+                      HomepageSettingsService.instance.updateSettings((cur) => cur.copyWith(showSavedPages: val));
                     }),
                     onTap: () {
-                      HomepageSettingsService.instance.updateSettings((cur) => cur.copyWith(showSearchBar: !cur.showSearchBar));
+                      HomepageSettingsService.instance.updateSettings((cur) => cur.copyWith(showSavedPages: !cur.showSavedPages));
                     },
                   ),
                 ],

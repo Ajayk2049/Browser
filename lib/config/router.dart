@@ -3,6 +3,7 @@ import '../features/browser/screens/bookmarks_screen.dart';
 import '../features/browser/screens/browser_screen.dart';
 import '../features/browser/screens/history_screen.dart';
 import '../features/downloads/downloads.dart';
+import '../features/settings/screens/extensions_screen.dart';
 import '../features/settings/screens/homepage_settings_screen.dart';
 import '../features/settings/screens/search_engine_settings_screen.dart';
 import '../features/settings/settings.dart';
@@ -46,6 +47,11 @@ final appRouter = GoRouter(
       path: '/settings/search-engine',
       name: 'search_engine_settings',
       builder: (context, state) => const SearchEngineSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/extensions',
+      name: 'extensions_settings',
+      builder: (context, state) => const ExtensionsScreen(),
     ),
   ],
 );

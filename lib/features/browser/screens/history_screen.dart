@@ -52,7 +52,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
               children: [
-                _squircleBtn(() => Navigator.of(context).maybePop(), btnBg, btnBorder, Icon(PhosphorIcons.caretLeft, size: 20, color: fg)),
+                _circleBtn(() => Navigator.of(context).maybePop(), btnBg, btnBorder, Icon(PhosphorIcons.caretLeft, size: 20, color: fg)),
                 Expanded(
                   child: Center(
                     child: Text('History', style: TextStyle(fontFamily: 'Inter', fontSize: 17, fontWeight: FontWeight.w600, color: fg)),
@@ -215,23 +215,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ),
       ],
-      child: _squircleBtn(null, bg, border, Icon(PhosphorIcons.dotsThree, size: 20.0, color: iconColor)),
+      child: _circleBtn(null, bg, border, Icon(PhosphorIcons.dotsThreeVertical, size: 20.0, color: iconColor)),
     );
   }
 
-  Widget _squircleBtn(VoidCallback? onTap, Color bg, Color border, Widget child) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10.0),
-        child: Ink(
-          width: 36.0,
-          height: 36.0,
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10.0), border: Border.all(color: border, width: 1.0)),
-          child: Center(child: child),
-        ),
-      ),
+  Widget _circleBtn(VoidCallback? onTap, Color bg, Color border, Widget child) {
+    return Container(
+      width: 40.0,
+      height: 40.0,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle, border: Border.all(color: border)),
+      child: IconButton(padding: EdgeInsets.zero, icon: child, onPressed: onTap),
     );
   }
 

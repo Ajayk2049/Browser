@@ -12,12 +12,14 @@ import '../services/download_service.dart';
 class DownloadTaskCard extends StatelessWidget {
   final DownloadTask task;
   final VoidCallback onDelete;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
   const DownloadTaskCard({
     super.key,
     required this.task,
     required this.onDelete,
+    this.onTap,
     this.onLongPress,
   });
 
@@ -29,7 +31,13 @@ class DownloadTaskCard extends StatelessWidget {
   }
 
   IconData _getFileIcon(String name) {
+    if (task.isTorrent || task.url.startsWith('magnet:?')) {
+      return PhosphorIcons.magnet;
+    }
     final lower = name.toLowerCase();
+    if (lower.endsWith('.torrent')) {
+      return PhosphorIcons.magnet;
+    }
     if (lower.endsWith('.iso') || lower.endsWith('.img') || lower.endsWith('.dmg')) {
       return PhosphorIcons.disc;
     }
@@ -72,6 +80,7 @@ class DownloadTaskCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(AppRadius.card),
         child: Container(

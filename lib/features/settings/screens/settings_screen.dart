@@ -77,7 +77,7 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Extensions',
                 subtitle: 'Manage add-ons and web extensions',
                 trailing: _buildChevron(isDark),
-                onTap: () => _showNotice(context, 'Extensions manager will be available soon'),
+                onTap: () => context.push('/settings/extensions'),
               ),
               SettingsRowItem(
                 icon: PhosphorIcons.broom,

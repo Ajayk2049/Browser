@@ -17,6 +17,7 @@ class BrowserBottomBar extends StatelessWidget {
   final bool isHome;
   final int tabCount;
   final VoidCallback onOpenTabs;
+  final VoidCallback? onNewTab;
   final ValueChanged<BrowserMenuAction>? onMenuAction;
   final VoidCallback? onMenu;
 
@@ -30,6 +31,7 @@ class BrowserBottomBar extends StatelessWidget {
     this.isHome = false,
     this.tabCount = 1,
     required this.onOpenTabs,
+    this.onNewTab,
     this.onMenuAction,
     this.onMenu,
   });
@@ -100,7 +102,15 @@ class BrowserBottomBar extends StatelessWidget {
                   onTap: onOpenTabs,
                 ),
               ),
-              // 5. Menu button
+              // 5. New Tab button (+)
+              Expanded(
+                child: _BarItem(
+                  icon: PhosphorIcons.plus,
+                  label: 'New Tab',
+                  onTap: onNewTab,
+                ),
+              ),
+              // 6. Menu button
               Expanded(
                 child: onMenuAction != null
                     ? BrowserMenuPopup(

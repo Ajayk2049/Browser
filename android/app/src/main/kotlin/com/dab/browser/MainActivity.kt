@@ -37,6 +37,7 @@ class MainActivity : FlutterActivity() {
         }
 
         flutterEngine.platformViewsController.registry.registerViewFactory("com.dab/geckoview", GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger))
+        ExtensionManager(this, flutterEngine.dartExecutor.binaryMessenger)
         val intent = Intent(this, DownloadService::class.java)
         startService(intent); bindService(intent, connection, Context.BIND_AUTO_CREATE)
 

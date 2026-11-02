@@ -10,15 +10,15 @@ class HomepageSettingsModel {
   final String customHomepageUrl;
   final bool showTopSites;
   final bool showBookmarksBar;
-  final bool showSearchBar;
+  final bool showSavedPages;
 
   const HomepageSettingsModel({
     this.openOnStartup = true,
     this.newTabOpensHomepage = true,
     this.customHomepageUrl = '',
     this.showTopSites = true,
-    this.showBookmarksBar = false,
-    this.showSearchBar = true,
+    this.showBookmarksBar = true,
+    this.showSavedPages = true,
   });
 
   HomepageSettingsModel copyWith({
@@ -27,7 +27,7 @@ class HomepageSettingsModel {
     String? customHomepageUrl,
     bool? showTopSites,
     bool? showBookmarksBar,
-    bool? showSearchBar,
+    bool? showSavedPages,
   }) {
     return HomepageSettingsModel(
       openOnStartup: openOnStartup ?? this.openOnStartup,
@@ -35,7 +35,7 @@ class HomepageSettingsModel {
       customHomepageUrl: customHomepageUrl ?? this.customHomepageUrl,
       showTopSites: showTopSites ?? this.showTopSites,
       showBookmarksBar: showBookmarksBar ?? this.showBookmarksBar,
-      showSearchBar: showSearchBar ?? this.showSearchBar,
+      showSavedPages: showSavedPages ?? this.showSavedPages,
     );
   }
 
@@ -45,7 +45,7 @@ class HomepageSettingsModel {
         'customHomepageUrl': customHomepageUrl,
         'showTopSites': showTopSites,
         'showBookmarksBar': showBookmarksBar,
-        'showSearchBar': showSearchBar,
+        'showSavedPages': showSavedPages,
       };
 
   factory HomepageSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -54,8 +54,8 @@ class HomepageSettingsModel {
       newTabOpensHomepage: json['newTabOpensHomepage'] as bool? ?? true,
       customHomepageUrl: json['customHomepageUrl'] as String? ?? '',
       showTopSites: json['showTopSites'] as bool? ?? true,
-      showBookmarksBar: json['showBookmarksBar'] as bool? ?? false,
-      showSearchBar: json['showSearchBar'] as bool? ?? true,
+      showBookmarksBar: json['showBookmarksBar'] as bool? ?? true,
+      showSavedPages: json['showSavedPages'] as bool? ?? true,
     );
   }
 }

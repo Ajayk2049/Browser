@@ -3,32 +3,10 @@ import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import '../../../config/dio_client.dart';
 import '../../../config/env.dart';
+import '../models/url_metadata.dart';
 import '../services/download_service.dart';
 
-/// Resolved metadata from an HTTP probe or URI analysis.
-class UrlMetadata {
-  final String fileName;
-  final String fileExtension;
-  final int totalBytes;
-  final bool supportsResume;
-  final String finalUrl;
-
-  const UrlMetadata({
-    required this.fileName,
-    required this.fileExtension,
-    required this.totalBytes,
-    required this.supportsResume,
-    required this.finalUrl,
-  });
-
-  String get formattedSize {
-    if (totalBytes <= 0) return 'Unknown size';
-    if (totalBytes >= (1 << 30)) return '${(totalBytes / (1 << 30)).toStringAsFixed(2)} GB ($totalBytes bytes)';
-    if (totalBytes >= (1 << 20)) return '${(totalBytes / (1 << 20)).toStringAsFixed(2)} MB ($totalBytes bytes)';
-    if (totalBytes >= (1 << 10)) return '${(totalBytes / (1 << 10)).toStringAsFixed(2)} KB ($totalBytes bytes)';
-    return '$totalBytes bytes';
-  }
-}
+export '../models/url_metadata.dart';
 
 /// Helper that inspects Content-Disposition, redirect hops, and query hints.
 /// Complies with rules.md §13, §25.1, §25.2, and §29.2 (< 200 lines).
@@ -43,7 +21,6 @@ class UrlMetadataHelper {
     final uri = Uri.tryParse(trimmed);
     final ref = (referer?.isNotEmpty == true) ? referer : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}/' : null);
 
-    // 1. First attempt: Query native engine probe (single source of truth with DownloadEngine)
     try {
       final nativeRes = await DownloadService().probeUrl(trimmed, referer: ref);
       if (nativeRes != null) {
@@ -57,19 +34,13 @@ class UrlMetadataHelper {
         final cleanName = _cleanFileName(rawName ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
         final ext = _extractExtension(cleanName);
 
-        if (Env.enableLogging) {
-          developer.log('NATIVE PROBE: url=$fUrl len=$cLen ranges=$supRanges name=$cleanName', name: 'Probe');
-        }
-        if (cLen > 0) {
-          return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
-        }
-        // Size unknown from the native probe: keep going so the Dart probe can try the HEAD rung.
+        if (Env.enableLogging) developer.log('NATIVE PROBE: url=$fUrl len=$cLen ranges=$supRanges name=$cleanName', name: 'Probe');
+        if (cLen > 0) return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
       }
     } catch (e) {
       if (Env.enableLogging) developer.log('Native probe fallback: $e', name: 'Probe');
     }
 
-    // 2. Fallback: Refined Dart probe
     try {
       final dio = DioClient.instance;
       final reqHeaders = <String, dynamic>{
@@ -107,14 +78,11 @@ class UrlMetadataHelper {
 
       if (cr != null && cr.contains('/')) {
         final total = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
-        if (total > 0) len = total; // Handles "bytes 0-0/N" and "bytes */N"
+        if (total > 0) len = total;
       }
-      // A "bytes=0-0" probe body is exactly 1 byte, so any Content-Length above 1 means
-      // Range was ignored and the full body length was reported. Never trust the bare "1".
       if (len <= 0 && (clRaw > 1 || code == 200)) len = clRaw;
       if (code != 200 && code != 206 && code != 416) len = -1;
 
-      // Last rung: HEAD recovers servers/proxies that strip Content-Range on a 206.
       if (len <= 0 && (code == 200 || code == 206 || code == 416)) {
         try {
           final head = await dio.head<dynamic>(
@@ -135,10 +103,6 @@ class UrlMetadataHelper {
         } catch (_) {}
       }
 
-      if (Env.enableLogging) {
-        developer.log('PROBE $code len=$len cr=$cr cl=$clRaw', name: 'Probe');
-      }
-
       final String? name = _parseContentDisposition(headers.value('content-disposition')) ??
           _parseQueryParams(response.realUri) ??
           _parsePathSegment(response.realUri);
@@ -150,7 +114,7 @@ class UrlMetadataHelper {
 
       return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: len, supportsResume: resume, finalUrl: finalUrl);
     } catch (e) {
-      if (Env.enableLogging) developer.log('Probe exception for $trimmed: $e', name: 'Probe', error: e);
+      if (Env.enableLogging) developer.log('Probe exception: $e', name: 'Probe');
       final raw = uri?.pathSegments.lastOrNull;
       final name = (raw?.isNotEmpty == true) ? _cleanFileName(Uri.decodeComponent(raw!)) : 'download_${DateTime.now().millisecondsSinceEpoch}';
       return UrlMetadata(fileName: name, fileExtension: _extractExtension(name), totalBytes: -1, supportsResume: true, finalUrl: trimmed);

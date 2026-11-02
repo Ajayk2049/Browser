@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../theme/tokens/app_radius.dart';
 import '../../downloads/downloads.dart';
+import '../../settings/services/homepage_settings_service.dart';
 import '../../settings/services/search_engine_settings_service.dart';
 import '../models/browser_tab.dart';
 import '../models/home_content_item.dart';
@@ -10,13 +11,14 @@ import '../models/search_engine.dart';
 import '../services/bookmarks_service.dart';
 import '../services/quick_links_service.dart';
 import '../services/site_permissions_service.dart';
+import '../services/tab_persistence_service.dart';
 import '../utils/url_helper.dart';
-import '../widgets/add_quick_link_dialog.dart';
 import '../widgets/browser_address_bar.dart';
 import '../widgets/browser_bottom_bar.dart';
 import '../widgets/browser_error_banner.dart';
 import '../widgets/browser_home_view.dart';
 import '../widgets/browser_overflow_menu.dart';
+import '../widgets/browser_shortcut_helper.dart';
 import '../widgets/browser_tabs_sheet.dart';
 import '../widgets/browser_tab_viewport.dart';
 import '../widgets/media_grabber_sheet.dart';
@@ -50,11 +52,33 @@ class _BrowserScreenState extends State<BrowserScreen> {
     super.initState();
     _urlController = TextEditingController(text: '');
     _activeTabId = _createTab().id;
-    BookmarksService.instance.init();
-    BookmarksService.instance.addListener(_syncData);
-    QuickLinksService.instance.init();
-    QuickLinksService.instance.addListener(_syncData);
+    _initAndRestoreSession();
+    BookmarksService.instance..init()..addListener(_syncData);
+    QuickLinksService.instance..init()..addListener(_syncData);
     SitePermissionsService.instance.init();
+  }
+
+  Future<void> _initAndRestoreSession() async {
+    await HomepageSettingsService.instance.init();
+    final savedTabs = await TabPersistenceService.instance.loadSavedTabs();
+    if (!mounted) return;
+    setState(() {
+      for (final rec in savedTabs) {
+        _tabs.add(BrowserTabSession(id: 'tab-${_tabSequence++}', controller: GeckoBrowserController(), url: rec.url)..title = rec.title);
+      }
+      final hs = HomepageSettingsService.instance.settings;
+      if (hs.customHomepageUrl.isNotEmpty && hs.openOnStartup) {
+        _activeTab.url = hs.customHomepageUrl;
+        _urlController.text = hs.customHomepageUrl;
+        _activeTab.controller.loadUrl(hs.customHomepageUrl);
+      }
+    });
+  }
+
+  void _persistTabs() {
+    TabPersistenceService.instance.saveTabs([
+      for (final t in _tabs) if (!t.isHome) TabPersistenceRecord(id: t.id, url: t.url, title: t.title)
+    ]);
   }
 
   @override
@@ -65,9 +89,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     super.dispose();
   }
 
-  void _syncData() {
-    if (mounted) setState(() {});
-  }
+  void _syncData() { if (mounted) setState(() {}); }
 
   BrowserTabSession _createTab([String url = _homeUrl]) {
     final tab = BrowserTabSession(id: 'tab-${_tabSequence++}', controller: GeckoBrowserController(), url: url);
@@ -87,6 +109,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     } else {
       setState(() { _activeTab..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
       _activeTab.controller.loadUrl(resolvedUrl);
+      _persistTabs();
     }
   }
 
@@ -94,6 +117,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _activeTab..url = _homeUrl..title = 'Home'..error = null..isLoading = false..canGoForward = false;
       _urlController.text = ''; _detectedMedia.clear();
+      _persistTabs();
     });
   }
 
@@ -121,6 +145,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _activeTabId = _tabs.isEmpty ? _createTab().id : (_activeTabId == id ? _tabs[idx < _tabs.length ? idx : _tabs.length - 1].id : _activeTabId);
       _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
       _detectedMedia.clear();
+      _persistTabs();
     });
   }
 
@@ -182,10 +207,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
 
   void _openMediaGrabber() => showModalBottomSheet<void>(
-    context: context,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal))),
-    builder: (_) => MediaGrabberSheet(items: _detectedMedia),
-  );
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal))),
+        builder: (_) => MediaGrabberSheet(items: _detectedMedia),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -245,35 +270,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
           onHome: _loadHome,
           tabCount: _tabs.length,
           onOpenTabs: _openTabsSheet,
+          onNewTab: _newTab,
           onMenuAction: _handleMenuAction,
         ),
       ),
     );
-  }
-
-  Future<void> _openAddQuickLink() async {
-    final item = await AddQuickLinkDialog.show(context);
-    if (item != null && mounted) {
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
-        content: Text('Added "${item.title}" to shortcuts'),
-        behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
-      ));
-    }
-  }
-
-  Future<void> _confirmRemoveQuickLink(QuickLink item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove shortcut?'),
-        content: Text('Remove "${item.title}" from shortcuts?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
-    );
-    if (ok == true) await QuickLinksService.instance.removeQuickLink(item.id);
   }
 
   Widget _buildTabView(BrowserTabSession tab) {
@@ -281,8 +282,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return BrowserHomeView(
         onOpenUrl: _handleSubmit,
         onSeeAllBookmarks: _openBookmarks,
-        onAddQuickLink: _openAddQuickLink,
-        onRemoveQuickLink: _confirmRemoveQuickLink,
+        onAddQuickLink: () => BrowserShortcutHelper.openAddQuickLink(context),
+        onRemoveQuickLink: (item) => BrowserShortcutHelper.confirmRemoveQuickLink(context, item),
         quickLinks: QuickLinksService.instance.quickLinks,
         bookmarks: BookmarksService.instance.bookmarks,
       );
