@@ -3,6 +3,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
+import '../../settings/services/homepage_settings_service.dart';
 import '../models/home_content_item.dart';
 import 'quick_link_squircle.dart';
 
@@ -38,73 +39,84 @@ class BrowserHomeView extends StatelessWidget {
     final cardBg = isDark ? const Color(0xFF131722) : colorScheme.surfaceContainerLowest;
     final borderColor = isDark ? const Color(0xFF1E293B) : colorScheme.outlineVariant.withValues(alpha: 0.4);
 
-    return Container(
-      color: bgColor,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x4, vertical: AppSpacing.x6),
-        children: [
-          Text(
-            'Explore & Discover',
-            style: AppTypography.displaySm.copyWith(
-              fontWeight: FontWeight.w700,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.x4),
-          _buildQuickLinksGrid(colorScheme, isDark, borderColor),
-          const SizedBox(height: AppSpacing.x6),
-          _buildSectionHeader(
-            title: 'Bookmarks',
-            trailing: TextButton(
-              onPressed: onSeeAllBookmarks,
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-              child: Text(
-                'See all (${bookmarks.length})',
-                style: AppTypography.bodyXs.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
-              ),
-            ),
-            colorScheme: colorScheme,
-          ),
-          const SizedBox(height: AppSpacing.x2),
-          _buildCardList(
-            bookmarks,
-            cardBg,
-            borderColor,
-            colorScheme,
-            PhosphorIcons.bookmarkSimple,
-            'No bookmarks yet. Tap the star icon to save pages.',
-          ),
-          const SizedBox(height: AppSpacing.x6),
-          _buildSectionHeader(
-            title: 'Saved Pages',
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: Text(
-                '${savedPages.length} saved',
-                style: AppTypography.bodyXs.copyWith(
-                  color: isDark ? Colors.white70 : colorScheme.onSurfaceVariant,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
+    return ListenableBuilder(
+      listenable: HomepageSettingsService.instance,
+      builder: (context, _) {
+        final hs = HomepageSettingsService.instance.settings;
+
+        return Container(
+          color: bgColor,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x4, vertical: AppSpacing.x6),
+            children: [
+              Text(
+                'Explore & Discover',
+                style: AppTypography.displaySm.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
                 ),
               ),
-            ),
-            colorScheme: colorScheme,
+              if (hs.showTopSites) ...[
+                const SizedBox(height: AppSpacing.x4),
+                _buildQuickLinksGrid(colorScheme, isDark, borderColor),
+              ],
+              if (hs.showBookmarksBar) ...[
+                const SizedBox(height: AppSpacing.x6),
+                _buildSectionHeader(
+                  title: 'Bookmarks',
+                  trailing: TextButton(
+                    onPressed: onSeeAllBookmarks,
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: Text(
+                      'See all (${bookmarks.length})',
+                      style: AppTypography.bodyXs.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(height: AppSpacing.x2),
+                _buildCardList(
+                  bookmarks,
+                  cardBg,
+                  borderColor,
+                  colorScheme,
+                  PhosphorIcons.bookmarkSimple,
+                  'No bookmarks yet. Tap the star icon to save pages.',
+                ),
+              ],
+              const SizedBox(height: AppSpacing.x6),
+              _buildSectionHeader(
+                title: 'Saved Pages',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  child: Text(
+                    '${savedPages.length} saved',
+                    style: AppTypography.bodyXs.copyWith(
+                      color: isDark ? Colors.white70 : colorScheme.onSurfaceVariant,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                colorScheme: colorScheme,
+              ),
+              const SizedBox(height: AppSpacing.x2),
+              _buildCardList(
+                savedPages,
+                cardBg,
+                borderColor,
+                colorScheme,
+                PhosphorIcons.article,
+                'No saved offline pages yet.',
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.x2),
-          _buildCardList(
-            savedPages,
-            cardBg,
-            borderColor,
-            colorScheme,
-            PhosphorIcons.article,
-            'No saved offline pages yet.',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -168,24 +180,22 @@ class BrowserHomeView extends StatelessWidget {
     IconData defaultIcon,
     String emptyMessage,
   ) {
+    final border = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.card),
+      side: BorderSide(color: borderColor),
+    );
     if (items.isEmpty) {
       return Material(
         color: cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          side: BorderSide(color: borderColor),
-        ),
+        shape: border,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x4, vertical: AppSpacing.x4),
+          padding: const EdgeInsets.all(AppSpacing.x4),
           child: Row(
             children: [
               Icon(defaultIcon, size: 20, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
               const SizedBox(width: AppSpacing.x3),
               Expanded(
-                child: Text(
-                  emptyMessage,
-                  style: AppTypography.bodySm.copyWith(color: colorScheme.onSurfaceVariant),
-                ),
+                child: Text(emptyMessage, style: AppTypography.bodySm.copyWith(color: colorScheme.onSurfaceVariant)),
               ),
             ],
           ),
@@ -195,10 +205,7 @@ class BrowserHomeView extends StatelessWidget {
 
     return Material(
       color: cardBg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        side: BorderSide(color: borderColor),
-      ),
+      shape: border,
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -218,19 +225,13 @@ class BrowserHomeView extends StatelessWidget {
               ),
               title: Text(
                 items[i].title,
-                style: AppTypography.bodySm.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
+                style: AppTypography.bodySm.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
                 items[i].subtitle,
-                style: AppTypography.bodyXs.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontSize: 11,
-                ),
+                style: AppTypography.bodyXs.copyWith(color: colorScheme.onSurfaceVariant, fontSize: 11),
               ),
               trailing: Icon(PhosphorIcons.caretRight, size: 14, color: colorScheme.onSurfaceVariant),
               onTap: () => onOpenUrl(items[i].url),

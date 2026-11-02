@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../theme/tokens/app_radius.dart';
 import '../../downloads/downloads.dart';
+import '../../settings/services/search_engine_settings_service.dart';
 import '../models/browser_tab.dart';
 import '../models/home_content_item.dart';
 import '../models/search_engine.dart';
@@ -38,8 +39,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final List<DetectedMedia> _detectedMedia = [];
   late String _activeTabId;
   int _tabSequence = 0;
-  SearchEngine _selectedEngine = SearchEngine.duckDuckGo;
   bool _isPromptingDownload = false;
+
+  SearchEngine get _selectedEngine => SearchEngineSettingsService.instance.settings.defaultEngine;
 
   BrowserTabSession get _activeTab => _tabs.firstWhere((t) => t.id == _activeTabId);
 
@@ -75,7 +77,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _handleSubmit(String rawInput) {
     if (rawInput == _homeUrl || rawInput == 'dab.app/home' || rawInput.trim().isEmpty) return _loadHome();
-    final resolvedUrl = UrlHelper.resolveInput(rawInput, _selectedEngine);
+    final customUrl = SearchEngineSettingsService.instance.settings.customEngineUrl;
+    final resolvedUrl = UrlHelper.resolveInput(rawInput, _selectedEngine, customQueryUrl: customUrl);
     if (resolvedUrl.isEmpty) return;
     final uri = Uri.tryParse(resolvedUrl);
     if (uri == null) return;
@@ -90,8 +93,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _loadHome() {
     setState(() {
       _activeTab..url = _homeUrl..title = 'Home'..error = null..isLoading = false..canGoForward = false;
-      _urlController.text = '';
-      _detectedMedia.clear();
+      _urlController.text = ''; _detectedMedia.clear();
     });
   }
 
@@ -109,10 +111,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() { _activeTabId = id; _urlController.text = tab.isHome ? '' : tab.url; _detectedMedia.clear(); });
   }
 
-  void _newTab() {
-    final tab = _createTab();
-    setState(() { _activeTabId = tab.id; _urlController.text = ''; _detectedMedia.clear(); });
-  }
+  void _newTab() => setState(() { _activeTabId = _createTab().id; _urlController.text = ''; _detectedMedia.clear(); });
 
   void _closeTab(String id) {
     setState(() {
@@ -176,10 +175,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     ));
   }
 
-  void _sharePage() {
-    if (_activeTab.url.isEmpty || _activeTab.isHome) return;
-    const MethodChannel('com.dab/downloader').invokeMethod('shareUrl', {'url': _activeTab.url, 'title': _activeTab.title});
-  }
+  void _sharePage() => (_activeTab.url.isNotEmpty && !_activeTab.isHome)
+      ? const MethodChannel('com.dab/downloader').invokeMethod('shareUrl', {'url': _activeTab.url, 'title': _activeTab.title})
+      : null;
 
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
 
@@ -222,7 +220,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 detectedMediaCount: _detectedMedia.length,
                 onOpenMediaGrabber: _openMediaGrabber,
                 selectedEngine: _selectedEngine,
-                onEngineChanged: (e) => setState(() => _selectedEngine = e),
+                onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
                 isHome: _activeTab.isHome,
               ),
               if (_activeTab.isLoading)

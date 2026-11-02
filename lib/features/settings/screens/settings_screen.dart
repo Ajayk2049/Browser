@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_group_card.dart';
@@ -32,14 +33,14 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Homepage',
                 subtitle: 'Choose the page that opens on every new tab',
                 trailing: _buildChevron(isDark),
-                onTap: () => _showNotice(context, 'Homepage: Default Start Page is active'),
+                onTap: () => context.push('/settings/homepage'),
               ),
               SettingsRowItem(
                 icon: PhosphorIcons.magnifyingGlass,
                 title: 'Default search engine',
                 subtitle: 'Pick the engine that powers the omnibox',
                 trailing: _buildChevron(isDark),
-                onTap: () => _showNotice(context, 'Search engine can be selected directly in the omnibox'),
+                onTap: () => context.push('/settings/search-engine'),
               ),
             ],
           ),

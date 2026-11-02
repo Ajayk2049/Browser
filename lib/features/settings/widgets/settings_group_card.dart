@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 /// One row entry model inside a settings group card.
 class SettingsRowItem {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? customLeading;
   final String title;
   final String subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
 
   const SettingsRowItem({
-    required this.icon,
+    this.icon,
+    this.customLeading,
     required this.title,
     required this.subtitle,
     this.trailing,
@@ -87,23 +89,25 @@ class _SettingsRow extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 64.0),
           child: Row(
             children: [
-              // Squircle Icon Box (38x38dp)
-              Container(
-                width: 38.0,
-                height: 38.0,
-                decoration: BoxDecoration(
-                  color: iconBoxBg,
-                  borderRadius: BorderRadius.circular(10.0),
-                  border: Border.all(color: iconBoxBorder, width: 1.0),
-                ),
-                child: Center(
-                  child: Icon(
-                    item.icon,
-                    size: 19.0,
-                    color: iconColor,
+              if (item.customLeading != null)
+                item.customLeading!
+              else
+                Container(
+                  width: 38.0,
+                  height: 38.0,
+                  decoration: BoxDecoration(
+                    color: iconBoxBg,
+                    borderRadius: BorderRadius.circular(10.0),
+                    border: Border.all(color: iconBoxBorder, width: 1.0),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      item.icon ?? Icons.circle,
+                      size: 19.0,
+                      color: iconColor,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: 12.0),
               // Two-line Text Column
               Expanded(
@@ -137,7 +141,6 @@ class _SettingsRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8.0),
-              // Trailing widget or default chevron
               if (item.trailing != null) item.trailing!,
             ],
           ),
@@ -146,4 +149,3 @@ class _SettingsRow extends StatelessWidget {
     );
   }
 }
-

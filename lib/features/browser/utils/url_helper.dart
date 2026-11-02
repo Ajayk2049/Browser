@@ -19,7 +19,7 @@ class UrlHelper {
 
   /// Resolves raw text from the address bar into either a valid URL or a search engine query.
   /// Guarantees that search terms never trigger browser host-resolution fallback failures.
-  static String resolveInput(String rawInput, SearchEngine engine) {
+  static String resolveInput(String rawInput, SearchEngine engine, {String? customQueryUrl}) {
     final trimmed = rawInput.trim();
     if (trimmed.isEmpty) return engine.homeUrl;
 
@@ -38,7 +38,7 @@ class UrlHelper {
 
     // 2. Multi-word phrases with whitespace are always search queries
     if (_hasWhitespace.hasMatch(trimmed)) {
-      return engine.buildSearchUrl(trimmed);
+      return engine.buildSearchUrl(trimmed, customQueryUrl: customQueryUrl);
     }
 
     // 3. Check for localhost
@@ -57,7 +57,7 @@ class UrlHelper {
     }
 
     // 6. Otherwise (e.g., 'flutter', 'weather', 'cats', 'pizza'), treat as search query
-    return engine.buildSearchUrl(trimmed);
+    return engine.buildSearchUrl(trimmed, customQueryUrl: customQueryUrl);
   }
 
   /// Checks if the URL represents a downloadable binary or torrent resource.
