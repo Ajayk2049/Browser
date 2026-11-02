@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/home_content_item.dart';
+import '../utils/storage_persistence_helper.dart';
 
 /// Real persistent storage service for user-saved bookmarks.
 /// Persists entries to local JSON disk storage and notifies reactive listeners.
@@ -18,24 +17,23 @@ class BookmarksService extends ChangeNotifier {
   List<BookmarkItem> get bookmarks => List.unmodifiable(_bookmarks);
   int get count => _bookmarks.length;
 
+  static const String _fileName = 'bookmarks.json';
+
   /// Loads bookmarks from disk if not yet initialized.
   Future<void> init() async {
     if (_isInitialized) return;
     _isInitialized = true;
     try {
-      final file = await _getStorageFile();
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        if (content.trim().isNotEmpty) {
-          final decoded = jsonDecode(content) as List<dynamic>;
-          _bookmarks.clear();
-          for (final item in decoded) {
-            if (item is Map<String, dynamic>) {
-              _bookmarks.add(BookmarkItem.fromJson(item));
-            }
+      final content = await StoragePersistenceHelper.readData(_fileName);
+      if (content != null && content.trim().isNotEmpty) {
+        final decoded = jsonDecode(content) as List<dynamic>;
+        _bookmarks.clear();
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) {
+            _bookmarks.add(BookmarkItem.fromJson(item));
           }
-          notifyListeners();
         }
+        notifyListeners();
       }
     } catch (e) {
       debugPrint('BookmarksService.init error: $e');
@@ -109,16 +107,10 @@ class BookmarksService extends ChangeNotifier {
     return trimmed;
   }
 
-  Future<File> _getStorageFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/bookmarks.json');
-  }
-
   Future<void> _persist() async {
     try {
-      final file = await _getStorageFile();
       final data = jsonEncode(_bookmarks.map((b) => b.toJson()).toList());
-      await file.writeAsString(data);
+      await StoragePersistenceHelper.writeData(_fileName, data);
     } catch (e) {
       debugPrint('BookmarksService._persist error: $e');
     }

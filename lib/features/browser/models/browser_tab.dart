@@ -56,10 +56,22 @@ class BrowserTabSession {
 
   bool get isHome => url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty;
 
-  BrowserTabInfo info({required bool isActive}) => BrowserTabInfo(
-        id: id,
-        title: isHome ? 'Explore & Discover' : title,
-        url: url,
-        isActive: isActive,
-      );
+  BrowserTabInfo info({required bool isActive}) {
+    String computedTitle;
+    if (isHome) {
+      computedTitle = 'Explore & Discover';
+    } else if (title.trim().isNotEmpty && title.trim().toLowerCase() != 'home') {
+      computedTitle = title.trim();
+    } else {
+      final host = Uri.tryParse(url)?.host ?? '';
+      computedTitle = host.isNotEmpty ? host : 'Web Page';
+    }
+
+    return BrowserTabInfo(
+      id: id,
+      title: computedTitle,
+      url: url,
+      isActive: isActive,
+    );
+  }
 }

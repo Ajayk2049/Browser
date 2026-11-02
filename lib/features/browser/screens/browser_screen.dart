@@ -100,9 +100,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _isPromptingDownload = true;
     try {
       if (mounted) await AddDownloadDialog.show(context, initialUrl: uri.toString());
-    } finally {
-      _isPromptingDownload = false;
-    }
+    } finally { _isPromptingDownload = false; }
   }
 
   void _selectTab(String id) {
@@ -118,10 +116,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _closeTab(String id) {
     setState(() {
-      final index = _tabs.indexWhere((t) => t.id == id);
-      if (index < 0) return;
-      _tabs.removeAt(index);
-      _activeTabId = _tabs.isEmpty ? _createTab().id : (_activeTabId == id ? _tabs[index < _tabs.length ? index : _tabs.length - 1].id : _activeTabId);
+      final idx = _tabs.indexWhere((t) => t.id == id);
+      if (idx < 0) return;
+      _tabs.removeAt(idx);
+      _activeTabId = _tabs.isEmpty ? _createTab().id : (_activeTabId == id ? _tabs[idx < _tabs.length ? idx : _tabs.length - 1].id : _activeTabId);
       _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
       _detectedMedia.clear();
     });
@@ -130,9 +128,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _openTabsSheet() async {
     if (_tabs.isEmpty) return;
     await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (sCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) => BrowserTabsSheet(
           tabs: [for (final t in _tabs) t.info(isActive: t.id == _activeTabId)],
@@ -145,8 +141,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _openBookmarks() async {
-    final selectedUrl = await context.push<String>('/bookmarks');
-    if (selectedUrl != null && selectedUrl.isNotEmpty) _handleSubmit(selectedUrl);
+    final u = await context.push<String>('/bookmarks');
+    if (u != null && u.isNotEmpty) _handleSubmit(u);
+  }
+
+  Future<void> _openHistory() async {
+    final u = await context.push<String>('/history');
+    if (u != null && u.isNotEmpty) _handleSubmit(u);
   }
 
   void _handleMenuAction(BrowserMenuAction action) {
@@ -154,28 +155,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
       case BrowserMenuAction.settings: context.push('/settings');
       case BrowserMenuAction.downloadManager: context.push('/downloads');
       case BrowserMenuAction.bookmarks: _openBookmarks();
+      case BrowserMenuAction.history: _openHistory();
       default:
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('${action.label} is not wired up yet'), behavior: SnackBarBehavior.floating));
+        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
+          content: Text('${action.label} is not wired up yet'),
+          behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
+        ));
     }
   }
 
   Future<void> _toggleBookmark() async {
     if (_activeTab.isHome || _activeTab.url.isEmpty) return;
     final wasAdded = await BookmarksService.instance.toggleBookmark(
-      url: _activeTab.url,
-      title: _activeTab.title.isNotEmpty ? _activeTab.title : _activeTab.url,
+      url: _activeTab.url, title: _activeTab.title.isNotEmpty ? _activeTab.title : _activeTab.url,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(wasAdded ? 'Page added to bookmarks' : 'Bookmark removed'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-        action: wasAdded ? SnackBarAction(label: 'View', onPressed: _openBookmarks) : null,
-      ));
+    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
+      content: Text(wasAdded ? 'Page added to bookmarks' : 'Bookmark removed'),
+      behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
+    ));
   }
 
   void _sharePage() {
@@ -258,7 +256,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _openAddQuickLink() async {
     final item = await AddQuickLinkDialog.show(context);
     if (item != null && mounted) {
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text('Added "${item.title}" to shortcuts'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
+        content: Text('Added "${item.title}" to shortcuts'),
+        behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
+      ));
     }
   }
 
@@ -292,7 +293,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       tab: tab,
       isActive: tab.id == _activeTabId,
       onUrlChanged: (url) => setState(() { _urlController.text = url; _detectedMedia.clear(); }),
-      onDownloadPrompt: (uri) => _promptDownload(uri),
+      onDownloadPrompt: _promptDownload,
       onSync: () => setState(() {}),
     );
   }

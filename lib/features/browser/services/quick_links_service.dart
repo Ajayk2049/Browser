@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/home_content_item.dart';
+import '../utils/storage_persistence_helper.dart';
 
 /// Real persistent storage service for user-customizable home quick links.
 /// Persists entries to local JSON disk storage and notifies reactive listeners.
@@ -18,25 +17,24 @@ class QuickLinksService extends ChangeNotifier {
   List<QuickLink> get quickLinks => List.unmodifiable(_quickLinks);
   int get count => _quickLinks.length;
 
+  static const String _fileName = 'quick_links.json';
+
   /// Loads quick links from local disk or seeds defaults on first run.
   Future<void> init() async {
     if (_isInitialized) return;
     _isInitialized = true;
     try {
-      final file = await _getStorageFile();
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        if (content.trim().isNotEmpty) {
-          final decoded = jsonDecode(content) as List<dynamic>;
-          _quickLinks.clear();
-          for (final item in decoded) {
-            if (item is Map<String, dynamic>) {
-              _quickLinks.add(QuickLink.fromJson(item));
-            }
+      final content = await StoragePersistenceHelper.readData(_fileName);
+      if (content != null && content.trim().isNotEmpty) {
+        final decoded = jsonDecode(content) as List<dynamic>;
+        _quickLinks.clear();
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) {
+            _quickLinks.add(QuickLink.fromJson(item));
           }
-          notifyListeners();
-          return;
         }
+        notifyListeners();
+        return;
       }
     } catch (e) {
       debugPrint('QuickLinksService.init error: $e');
@@ -108,16 +106,10 @@ class QuickLinksService extends ChangeNotifier {
     return trimmed;
   }
 
-  Future<File> _getStorageFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/quick_links.json');
-  }
-
   Future<void> _persist() async {
     try {
-      final file = await _getStorageFile();
       final data = jsonEncode(_quickLinks.map((q) => q.toJson()).toList());
-      await file.writeAsString(data);
+      await StoragePersistenceHelper.writeData(_fileName, data);
     } catch (e) {
       debugPrint('QuickLinksService._persist error: $e');
     }

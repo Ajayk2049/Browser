@@ -68,6 +68,7 @@ class _DeleteDownloadDialogState extends State<DeleteDownloadDialog> {
     sm.showSnackBar(
       SnackBar(
         content: Text(willPurge ? 'Download and file deleted' : 'Download removed from list'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

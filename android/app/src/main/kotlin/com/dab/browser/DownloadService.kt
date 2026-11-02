@@ -34,9 +34,7 @@ class DownloadService : Service() {
                 DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.PAUSED, DownloadStatus.CANCELED, DownloadStatus.QUEUED
             )
             if (isCritical || (now - lastTime) >= THROTTLE_INTERVAL_MS) {
-                lastEmitTimes[task.id] = now
-                onUpdateNotification?.invoke(task)
-                onProgressCallback?.invoke(task)
+                lastEmitTimes[task.id] = now; onUpdateNotification?.invoke(task); onProgressCallback?.invoke(task)
             }
         }
     }
@@ -46,7 +44,6 @@ class DownloadService : Service() {
     private lateinit var db: DownloadDatabase
 
     inner class LocalBinder : Binder() { fun getService(): DownloadService = this@DownloadService }
-
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {
@@ -55,26 +52,22 @@ class DownloadService : Service() {
         db = DownloadDatabase(applicationContext)
         loadSavedTasks()
         createNotificationChannel()
-        startAsForeground("Download Service", "Download engine running")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
     // Android 15/16 dataSync Foreground Service Timeout Handler
     override fun onTimeout(startId: Int, fgsType: Int) {
-        pauseAll()
-        allTasks.values.forEach { db.upsertTask(it) }
+        pauseAll(); allTasks.values.forEach { db.upsertTask(it) }
         val note = buildNotification("Downloads Paused", "System time limit reached. Tap in app to resume.", 0, 0)
         notificationManager.notify(NOTIFICATION_ID, note)
-        stopForeground(STOP_FOREGROUND_DETACH)
-        stopSelf(startId)
+        stopForeground(STOP_FOREGROUND_DETACH); stopSelf(startId)
     }
 
     private fun loadSavedTasks() {
         for (t in db.loadAllTasks()) {
             if (t.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING, DownloadStatus.QUEUED)) {
-                t.status = DownloadStatus.PAUSED
-                db.upsertTask(t)
+                t.status = DownloadStatus.PAUSED; db.upsertTask(t)
             }
             allTasks[t.id] = t
         }
@@ -110,8 +103,10 @@ class DownloadService : Service() {
         }
     }
 
+    private var isForegroundActive = false
+
     private fun launchEngine(task: DownloadTask) {
-        taskQueue.remove(task.id)
+        taskQueue.remove(task.id); ensureForegroundStarted()
         if (task.isTorrent) {
             val tEngine = activeTorrentEngines.getOrPut(task.id) {
                 TorrentEngine(task) { updated ->
@@ -169,7 +164,7 @@ class DownloadService : Service() {
                 it.status = DownloadStatus.PAUSED; db.upsertTask(it); dispatchProgress(it, isStateChange = true)
             }
         }
-        processQueue()
+        processQueue(); checkAutoStop()
     }
 
     fun resumeDownload(taskId: String) = allTasks[taskId]?.let { enqueueTask(it) }
@@ -178,7 +173,7 @@ class DownloadService : Service() {
         taskQueue.remove(taskId); val task = allTasks.remove(taskId)
         activeEngines.remove(taskId)?.cancel(); activeTorrentEngines.remove(taskId)?.cancel()
         task?.let { it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true) }
-        db.deleteTask(taskId); processQueue()
+        db.deleteTask(taskId); processQueue(); checkAutoStop()
     }
 
     fun pauseAll() {
@@ -189,40 +184,48 @@ class DownloadService : Service() {
             }
         }
         activeEngines.values.forEach { it.pause() }; activeTorrentEngines.values.forEach { it.pause() }
+        checkAutoStop()
     }
 
     fun resumeAll() = allTasks.values.filter { it.status == DownloadStatus.PAUSED }.forEach { enqueueTask(it) }
 
-    fun setMaxConcurrent(limit: Int) {
-        maxConcurrentDownloads = limit.coerceAtLeast(1)
-        processQueue()
-    }
+    fun setMaxConcurrent(limit: Int) { maxConcurrentDownloads = limit.coerceAtLeast(1); processQueue() }
 
     fun setSpeedLimit(taskId: String?, bytesPerSec: Long) {
         val limit = bytesPerSec.coerceAtLeast(0L)
         if (taskId != null) {
-            activeEngines[taskId]?.setSpeedLimit(limit)
-            allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
+            activeEngines[taskId]?.setSpeedLimit(limit); allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         } else {
             globalSpeedLimitBytesPerSec = limit
-            activeEngines.values.forEach { it.setSpeedLimit(limit) }
-            allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
+            activeEngines.values.forEach { it.setSpeedLimit(limit) }; allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         }
     }
 
     private fun checkAutoStop() {
         val hasActive = activeEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } ||
                 activeTorrentEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
-        if (!hasActive && taskQueue.isEmpty()) stopForeground(STOP_FOREGROUND_DETACH)
+        if (!hasActive && taskQueue.isEmpty() && isForegroundActive) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            notificationManager.cancel(NOTIFICATION_ID)
+            isForegroundActive = false
+        }
     }
 
-    private fun startAsForeground(title: String, text: String) {
-        val n = buildNotification(title, text, 0, 0)
+    private fun ensureForegroundStarted() {
+        if (!isForegroundActive) {
+            startAsForeground("Downloading", "Preparing download...", true)
+            isForegroundActive = true
+        }
+    }
+
+    private fun startAsForeground(title: String, text: String, indeterminate: Boolean = false) {
+        val n = buildNotification(title, text, if (indeterminate) 0 else 100, if (indeterminate) 0 else 50)
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, type) else startForeground(NOTIFICATION_ID, n)
     }
 
     private fun updateNotification(task: DownloadTask) {
+        if (!isForegroundActive) ensureForegroundStarted()
         val name = File(task.destinationPath).name
         val pct = (task.progress * 100).toInt()
         val mb = String.format("%.2f", task.speedBytesPerSec / (1024.0 * 1024.0))
@@ -230,11 +233,13 @@ class DownloadService : Service() {
         notificationManager.notify(NOTIFICATION_ID, buildNotification(name, statusText, 100, pct))
     }
 
-    private fun buildNotification(title: String, text: String, max: Int, progress: Int): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle(title).setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(max > 0 && progress < max)
-            .setProgress(max, progress, max == 0).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
-    }
+    private fun buildNotification(title: String, text: String, max: Int, progress: Int): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title).setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(max > 0 && progress < max)
+            .setProgress(max, progress, max == 0)
+            .setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

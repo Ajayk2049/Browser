@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/browser_tab.dart';
+import '../services/history_service.dart';
 import '../utils/url_helper.dart';
 import 'gecko_browser_view.dart';
 
@@ -36,11 +37,20 @@ class BrowserTabViewport extends StatelessWidget {
         },
         onPageFinished: (ok) {
           tab.isLoading = false;
+          if (ok && tab.url.isNotEmpty && !tab.isHome) {
+            HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
+          }
           if (isActive) onSync();
         },
         onProgressChanged: (p) {
           tab.progress = p / 100.0;
           if (isActive) onSync();
+        },
+        onTitleChanged: (title) {
+          if (title.isNotEmpty) {
+            tab.title = title;
+            if (isActive) onSync();
+          }
         },
         onLocationChanged: (url) {
           if (url.isEmpty) return;

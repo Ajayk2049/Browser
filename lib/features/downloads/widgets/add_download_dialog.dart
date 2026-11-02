@@ -122,7 +122,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     );
     if (mounted) {
       Navigator.pop(context, ok);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(startNow ? 'Starting: $fileName' : 'Added to list: $fileName')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(startNow ? 'Starting: $fileName' : 'Added to list: $fileName'),
+        duration: const Duration(seconds: 2),
+      ));
     }
   }
 
@@ -174,7 +177,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                   GestureDetector(
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: _urlCtrl.text));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied URL to clipboard')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Copied URL to clipboard'),
+                        duration: Duration(seconds: 2),
+                      ));
                     },
                     child: Icon(PhosphorIcons.copy, size: 16, color: cs.onSurfaceVariant),
                   ),

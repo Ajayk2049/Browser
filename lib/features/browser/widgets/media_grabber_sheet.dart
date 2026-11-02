@@ -47,10 +47,7 @@ class MediaGrabberSheet extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Downloading $fileName...'),
-          action: SnackBarAction(
-            label: 'View',
-            onPressed: () => context.push('/downloads'),
-          ),
+          duration: const Duration(seconds: 2),
         ),
       );
     }

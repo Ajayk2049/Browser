@@ -11,6 +11,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="true"
+        android:fullBackupContent="true"
         android:enableOnBackInvokedCallback="true"
         android:requestLegacyExternalStorage="true">
 

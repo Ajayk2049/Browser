@@ -6,7 +6,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../theme/tokens/app_radius.dart';
 import '../../../theme/tokens/app_spacing.dart';
 import '../../../theme/tokens/app_typography.dart';
-import '../../browser/widgets/browser_bottom_bar.dart';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
 import '../utils/url_metadata_helper.dart';
@@ -103,7 +102,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final text = data?.text?.trim() ?? '';
     final isValid = text.startsWith('http://') || text.startsWith('https://') || text.startsWith('magnet:?');
     if (text.isEmpty || !isValid) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No valid download link on clipboard')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('No valid download link on clipboard'),
+            duration: Duration(seconds: 2),
+          ));
+      }
       return;
     }
     if (mounted) unawaited(AddDownloadDialog.show(context, initialUrl: text));
@@ -168,12 +174,6 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         leading: Center(child: _buildCircleButton(PhosphorIcons.caretLeft, fgColor, isDark, () => context.canPop() ? context.pop() : context.go('/'))),
         title: Text('Downloads', style: AppTypography.bodyLg.copyWith(fontWeight: FontWeight.w700, fontSize: 18, color: fgColor)),
         actions: [Center(child: Padding(padding: const EdgeInsets.only(right: AppSpacing.x4), child: _buildCircleButton(PhosphorIcons.dotsThreeVertical, fgColor, isDark, () {})))],
-      ),
-      bottomNavigationBar: BrowserBottomBar(
-        onForward: () => context.canPop() ? context.pop() : null,
-        onShare: () {},
-        onHome: () => context.go('/'),
-        onOpenTabs: () => context.go('/'),
       ),
       body: Stack(
         children: [
