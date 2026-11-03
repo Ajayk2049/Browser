@@ -12,7 +12,7 @@ class BrowserTabViewport extends StatelessWidget {
   final BrowserTabSession tab;
   final bool isActive;
   final ValueChanged<String> onUrlChanged;
-  final ValueChanged<Uri> onDownloadPrompt;
+  final ValueChanged<String> onDownloadPrompt;
   final VoidCallback onSync;
 
   const BrowserTabViewport({
@@ -28,53 +28,57 @@ class BrowserTabViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     return KeyedSubtree(
       key: ValueKey(tab.id),
-      child: GeckoBrowserView(
-        initialUrl: tab.url,
-        controller: tab.controller,
-        onPageStarted: (url) {
-          tab..url = url..isLoading = true..error = null;
-          if (isActive) onUrlChanged(url);
-        },
-        onPageFinished: (ok) {
-          tab.isLoading = false;
-          if (ok && tab.url.isNotEmpty && !tab.isHome) {
-            HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
-          }
-          if (isActive) onSync();
-        },
-        onProgressChanged: (p) {
-          tab.progress = p / 100.0;
-          if (isActive) onSync();
-        },
-        onTitleChanged: (title) {
-          if (title.isNotEmpty) {
-            tab.title = title;
-            if (isActive) onSync();
-          }
-        },
-        onLocationChanged: (url) {
-          if (url.isEmpty) return;
-          tab.url = url;
-          if (isActive) {
-            onUrlChanged(url);
-            final uri = Uri.tryParse(url);
-            if (uri != null && UrlHelper.isDownloadable(url)) {
-              onDownloadPrompt(uri);
+      child: RepaintBoundary(
+        child: GeckoBrowserView(
+          initialUrl: tab.url,
+          controller: tab.controller,
+          onPageStarted: (url) {
+            tab..url = url..isLoading = true..error = null;
+            if (isActive) onUrlChanged(url);
+          },
+          onPageFinished: (ok) {
+            tab.isLoading = false;
+            if (ok && tab.url.isNotEmpty && !tab.isHome) {
+              HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
             }
-          }
-        },
-        onCanGoBack: (can) {
-          tab.canGoBack = can;
-          if (isActive) onSync();
-        },
-        onCanGoForward: (can) {
-          tab.canGoForward = can;
-          if (isActive) onSync();
-        },
-        onWebResourceError: (uri, code, cat) {
-          tab..error = 'Could not reach this page ($cat error $code)'..isLoading = false;
-          if (isActive) onSync();
-        },
+            if (isActive) onSync();
+          },
+          onProgressChanged: (p) {
+            final newProgress = p / 100.0;
+            final shouldSync = (newProgress - tab.progress).abs() >= 0.1 || newProgress >= 1.0;
+            tab.progress = newProgress;
+            if (isActive && shouldSync) onSync();
+          },
+          onTitleChanged: (title) {
+            if (title.isNotEmpty) {
+              tab.title = title;
+              if (isActive) onSync();
+            }
+          },
+          onLocationChanged: (url) {
+            if (url.isEmpty) return;
+            tab.url = url;
+            if (isActive) {
+              onUrlChanged(url);
+              if (UrlHelper.isDownloadable(url)) onDownloadPrompt(url);
+            }
+          },
+          onDownloadPrompt: (url) {
+            if (isActive) onDownloadPrompt(url);
+          },
+          onCanGoBack: (can) {
+            tab.canGoBack = can;
+            if (isActive) onSync();
+          },
+          onCanGoForward: (can) {
+            tab.canGoForward = can;
+            if (isActive) onSync();
+          },
+          onWebResourceError: (uri, code, cat) {
+            tab..error = 'Could not reach this page ($cat error $code)'..isLoading = false;
+            if (isActive) onSync();
+          },
+        ),
       ),
     );
   }

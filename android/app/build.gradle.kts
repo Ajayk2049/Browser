@@ -26,14 +26,28 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
     applicationVariants.all {
         val variantName = name
         outputs.all {
+            val abi = filters.find { it.filterType == com.android.build.OutputFile.ABI }?.identifier
+            val suffix = if (abi != null) "_$abi" else ""
             (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.outputFileName =
-                "Dab_Browser_${variantName}.apk"
+                "Dab_Browser_${variantName}${suffix}.apk"
         }
     }
 }
@@ -49,6 +63,6 @@ flutter {
 }
 
 dependencies {
-    implementation("org.mozilla.geckoview:geckoview:124.0.20240311145044")
+    implementation("org.mozilla.geckoview:geckoview:144.0.20251027123126")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

@@ -77,6 +77,10 @@ void main() {
       expect(UrlHelper.isDownloadable('https://example.com/file.apk'), isTrue);
       expect(UrlHelper.isDownloadable('https://example.com/archive.zip'), isTrue);
       expect(UrlHelper.isDownloadable('magnet:?xt=urn:btih:xyz'), isTrue);
+      expect(UrlHelper.isDownloadable('MAGNET:?xt=urn:btih:xyz&dn=Ubuntu'), isTrue);
+      expect(UrlHelper.isDownloadable('https://example.com/file.torrent'), isTrue);
+      expect(UrlHelper.isDownloadable('https://example.com/download.php?file=ubuntu.torrent'), isTrue);
+      expect(UrlHelper.isDownloadable('https://example.com/file.torrent?token=abc'), isTrue);
       expect(UrlHelper.isDownloadable('https://example.com/page.html'), isFalse);
     });
   });

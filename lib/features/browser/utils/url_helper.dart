@@ -28,7 +28,7 @@ class UrlHelper {
     // 1. Explicit schemes are always direct URLs
     if (lower.startsWith('http://') ||
         lower.startsWith('https://') ||
-        lower.startsWith('magnet:?') ||
+        lower.startsWith('magnet:') ||
         lower.startsWith('file://') ||
         lower.startsWith('about:') ||
         lower.startsWith('chrome://') ||
@@ -60,17 +60,20 @@ class UrlHelper {
     return engine.buildSearchUrl(trimmed, customQueryUrl: customQueryUrl);
   }
 
-  /// Checks if the URL represents a downloadable binary or torrent resource.
+  /// Checks if the URL represents a downloadable binary, magnet link, or torrent resource.
   static bool isDownloadable(String urlStr) {
     final trimmed = urlStr.trim();
-    if (trimmed.startsWith('magnet:?')) return true;
-    final uri = Uri.tryParse(trimmed);
-    final lastSegment = uri?.pathSegments.lastOrNull?.toLowerCase();
-    if (lastSegment == null || lastSegment.isEmpty) return false;
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith('magnet:')) return true;
+    final clean = lower.split('?').first.split('#').first;
     const downloadExtensions = [
       '.apk', '.zip', '.rar', '.7z', '.tar', '.gz', '.bin', '.iso',
       '.mp4', '.mkv', '.avi', '.mp3', '.pdf', '.dmg', '.exe', '.torrent'
     ];
-    return downloadExtensions.any((ext) => lastSegment.endsWith(ext));
+    if (downloadExtensions.any((ext) => clean.endsWith(ext))) return true;
+    if (lower.contains('.torrent')) return true;
+    final uri = Uri.tryParse(trimmed);
+    final lastSegment = uri?.pathSegments.lastOrNull?.toLowerCase();
+    return lastSegment != null && downloadExtensions.any((ext) => lastSegment.endsWith(ext));
   }
 }

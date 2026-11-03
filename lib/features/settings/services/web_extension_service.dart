@@ -7,9 +7,18 @@ import '../models/web_extension_item.dart';
 class WebExtensionService extends ChangeNotifier {
   static final WebExtensionService instance = WebExtensionService._internal();
 
-  WebExtensionService._internal();
+  WebExtensionService._internal() {
+    _channel.setMethodCallHandler(_handleNativeCall);
+  }
 
   static const MethodChannel _channel = MethodChannel('com.dab/extensions');
+
+  Future<dynamic> _handleNativeCall(MethodCall call) async {
+    if (call.method == 'onExtensionsChanged') {
+      debugPrint('WebExtensionService: onExtensionsChanged received');
+      await refreshInstalled();
+    }
+  }
 
   final List<WebExtensionItem> _installed = [];
   bool _isLoading = false;
@@ -20,7 +29,7 @@ class WebExtensionService extends ChangeNotifier {
   /// Curated marketplace list (pre-installed are handled separately and listed under installed)
   static const List<WebExtensionItem> curatedMarketplace = [
     WebExtensionItem(
-      id: 'jid1-MnnxcxisbtPConvergence@jetpack',
+      id: 'jid1-MnnxcxisBPnSXQ@jetpack',
       name: 'Privacy Badger',
       version: '2024.2.6',
       description: 'Automatically learns to block invisible trackers.',

@@ -78,7 +78,9 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
         listenable: WebExtensionService.instance,
         builder: (context, _) {
           final installed = WebExtensionService.instance.installed;
-          final marketplace = WebExtensionService.curatedMarketplace;
+          final marketplace = WebExtensionService.curatedMarketplace
+              .where((m) => !installed.any((i) => i.id == m.id))
+              .toList();
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 48.0),
@@ -97,6 +99,9 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
                         item: installed[i],
                         onToggle: (val) => WebExtensionService.instance.toggleEnabled(installed[i]),
                         onUninstall: () => _handleUninstall(installed[i]),
+                        onOptions: installed[i].optionsPageUrl.isNotEmpty
+                            ? () => Navigator.of(context).pop(installed[i].optionsPageUrl)
+                            : null,
                       ),
                     ],
                 ],
@@ -107,14 +112,17 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
               _buildCardContainer(
                 isDark,
                 children: [
-                  for (int i = 0; i < marketplace.length; i++) ...[
-                    if (i > 0) _buildDivider(isDark),
-                    ExtensionRowTile(
-                      item: marketplace[i],
-                      isMarketplace: true,
-                      onInstall: () => _handleInstall(marketplace[i]),
-                    ),
-                  ],
+                  if (marketplace.isEmpty)
+                    _buildEmptyNotice('All available extensions installed', isDark)
+                  else
+                    for (int i = 0; i < marketplace.length; i++) ...[
+                      if (i > 0) _buildDivider(isDark),
+                      ExtensionRowTile(
+                        item: marketplace[i],
+                        isMarketplace: true,
+                        onInstall: () => _handleInstall(marketplace[i]),
+                      ),
+                    ],
                 ],
               ),
             ],

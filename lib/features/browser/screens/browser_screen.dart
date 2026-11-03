@@ -102,15 +102,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final customUrl = SearchEngineSettingsService.instance.settings.customEngineUrl;
     final resolvedUrl = UrlHelper.resolveInput(rawInput, _selectedEngine, customQueryUrl: customUrl);
     if (resolvedUrl.isEmpty) return;
+    if (UrlHelper.isDownloadable(resolvedUrl)) { _promptDownload(resolvedUrl); return; }
     final uri = Uri.tryParse(resolvedUrl);
     if (uri == null) return;
-    if (UrlHelper.isDownloadable(resolvedUrl)) {
-      _promptDownload(uri);
-    } else {
-      setState(() { _activeTab..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
-      _activeTab.controller.loadUrl(resolvedUrl);
-      _persistTabs();
-    }
+    setState(() { _activeTab..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
+    _activeTab.controller.loadUrl(resolvedUrl);
+    _persistTabs();
   }
 
   void _loadHome() {
@@ -121,11 +118,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
   }
 
-  Future<void> _promptDownload(Uri uri) async {
-    if (_isPromptingDownload) return;
+  Future<void> _promptDownload(String url) async {
+    if (_isPromptingDownload || url.isEmpty) return;
     _isPromptingDownload = true;
     try {
-      if (mounted) await AddDownloadDialog.show(context, initialUrl: uri.toString());
+      if (mounted) await AddDownloadDialog.show(context, initialUrl: url);
     } finally { _isPromptingDownload = false; }
   }
 

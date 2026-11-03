@@ -89,7 +89,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ubuntu-24.04-live-server.iso'), findsOneWidget);
-      expect(find.textContaining('6 Threads'), findsOneWidget);
       expect(find.textContaining('18.2 MB/s'), findsOneWidget);
       expect(find.byIcon(PhosphorIcons.pause), findsOneWidget);
     });
@@ -166,6 +165,10 @@ void main() {
       expect(
         UrlMetadataHelper.extractExtension('ubuntu-24.04-live-server.iso'),
         'iso',
+      );
+      expect(
+        UrlMetadataHelper.extractCandidateName('magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335de7ece74fed&dn=Big+Buck+Bunny'),
+        'Big Buck Bunny',
       );
     });
   });

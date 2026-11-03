@@ -9,6 +9,7 @@ class WebExtensionItem {
   final double rating;
   final String reviewsCount;
   final String downloadUrl;
+  final String optionsPageUrl;
   final bool isInstalled;
   final bool isEnabled;
 
@@ -21,6 +22,7 @@ class WebExtensionItem {
     this.rating = 5.0,
     this.reviewsCount = '',
     this.downloadUrl = '',
+    this.optionsPageUrl = '',
     this.isInstalled = false,
     this.isEnabled = true,
   });
@@ -34,6 +36,7 @@ class WebExtensionItem {
     double? rating,
     String? reviewsCount,
     String? downloadUrl,
+    String? optionsPageUrl,
     bool? isInstalled,
     bool? isEnabled,
   }) {
@@ -46,6 +49,7 @@ class WebExtensionItem {
       rating: rating ?? this.rating,
       reviewsCount: reviewsCount ?? this.reviewsCount,
       downloadUrl: downloadUrl ?? this.downloadUrl,
+      optionsPageUrl: optionsPageUrl ?? this.optionsPageUrl,
       isInstalled: isInstalled ?? this.isInstalled,
       isEnabled: isEnabled ?? this.isEnabled,
     );
@@ -57,6 +61,7 @@ class WebExtensionItem {
       name: map['name'] as String? ?? '',
       version: map['version'] as String? ?? '',
       description: map['description'] as String? ?? '',
+      optionsPageUrl: map['optionsPageUrl'] as String? ?? '',
       isInstalled: true,
       isEnabled: map['isEnabled'] as bool? ?? true,
     );
@@ -71,6 +76,7 @@ class WebExtensionItem {
         'rating': rating,
         'reviewsCount': reviewsCount,
         'downloadUrl': downloadUrl,
+        'optionsPageUrl': optionsPageUrl,
         'isInstalled': isInstalled,
         'isEnabled': isEnabled,
       };
@@ -84,6 +90,7 @@ class WebExtensionItem {
         rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
         reviewsCount: json['reviewsCount'] as String? ?? '',
         downloadUrl: json['downloadUrl'] as String? ?? '',
+        optionsPageUrl: json['optionsPageUrl'] as String? ?? '',
         isInstalled: json['isInstalled'] as bool? ?? false,
         isEnabled: json['isEnabled'] as bool? ?? true,
       );

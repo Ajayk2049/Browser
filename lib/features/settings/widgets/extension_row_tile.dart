@@ -11,6 +11,7 @@ class ExtensionRowTile extends StatelessWidget {
   final ValueChanged<bool>? onToggle;
   final VoidCallback? onInstall;
   final VoidCallback? onUninstall;
+  final VoidCallback? onOptions;
 
   const ExtensionRowTile({
     super.key,
@@ -20,6 +21,7 @@ class ExtensionRowTile extends StatelessWidget {
     this.onToggle,
     this.onInstall,
     this.onUninstall,
+    this.onOptions,
   });
 
   IconData _getExtensionIcon(String name) {
@@ -100,6 +102,14 @@ class ExtensionRowTile extends StatelessWidget {
             onChanged: onToggle,
           ),
         ),
+        if (onOptions != null) ...[
+          IconButton(
+            icon: Icon(PhosphorIcons.gear, size: 18.0, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+            splashRadius: 18.0,
+            tooltip: 'Settings',
+            onPressed: onOptions,
+          ),
+        ],
         if (onUninstall != null) ...[
           const SizedBox(width: 4.0),
           IconButton(

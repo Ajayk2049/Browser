@@ -44,7 +44,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     _refCtrl = TextEditingController(text: uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : '');
     final cand = url.isNotEmpty ? UrlMetadataHelper.extractCandidateName(url) : '';
     _nameCtrl = TextEditingController(text: cand);
-    _ext = cand.isNotEmpty ? UrlMetadataHelper.extractExtension(cand) : 'bin';
+    final isMag = url.toLowerCase().startsWith('magnet:');
+    _ext = cand.isNotEmpty ? (isMag && !cand.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(cand)) : (isMag ? 'torrent' : 'bin');
     _urlCtrl.addListener(_onUrlChanged);
     _initStorage();
     if (url.isNotEmpty) _probe(url);
@@ -52,7 +53,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
 
   void _onUrlChanged() {
     final url = _urlCtrl.text.trim();
-    if (url.isEmpty || !(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('magnet:?'))) return;
+    final lower = url.toLowerCase();
+    if (url.isEmpty || !(lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('magnet:'))) return;
     final uri = Uri.tryParse(url);
     if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) {
       _refCtrl.text = '${uri.scheme}://${uri.host}';
@@ -62,7 +64,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       if (_nameCtrl.text.isEmpty || _nameCtrl.text.startsWith('download_') || _nameCtrl.text == 'Resolving title...') {
         _nameCtrl.text = cand;
       }
-      _ext = UrlMetadataHelper.extractExtension(_nameCtrl.text.isNotEmpty ? _nameCtrl.text : cand);
+      final isMag = lower.startsWith('magnet:');
+      final cName = _nameCtrl.text.isNotEmpty ? _nameCtrl.text : cand;
+      _ext = isMag && !cName.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(cName);
     });
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () => _probe(url));

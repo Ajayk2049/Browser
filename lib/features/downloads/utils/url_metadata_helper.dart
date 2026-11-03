@@ -16,7 +16,7 @@ class UrlMetadataHelper {
   static Future<UrlMetadata> resolve(String rawUrl, {String? referer}) async {
     final trimmed = rawUrl.trim();
     if (trimmed.isEmpty) return _fallback('download');
-    if (trimmed.startsWith('magnet:?')) return _resolveMagnet(trimmed);
+    if (trimmed.toLowerCase().startsWith('magnet:')) return _resolveMagnet(trimmed);
 
     final uri = Uri.tryParse(trimmed);
     final ref = (referer?.isNotEmpty == true) ? referer : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}/' : null);
@@ -156,10 +156,11 @@ class UrlMetadataHelper {
   static String extractCandidateName(String url) {
     final trimmed = url.trim();
     if (trimmed.isEmpty) return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
-    if (trimmed.startsWith('magnet:?')) {
-      final uri = Uri.tryParse(trimmed);
-      final dn = uri?.queryParameters['dn'];
-      if (dn != null && dn.isNotEmpty) return _cleanFileName(Uri.decodeComponent(dn.replaceAll('+', ' ')));
+    if (trimmed.toLowerCase().startsWith('magnet:')) {
+      final m = RegExp(r'[?&]dn=([^&]+)', caseSensitive: false).firstMatch(trimmed);
+      if (m != null) {
+        try { return _cleanFileName(Uri.decodeQueryComponent(m.group(1)!)); } catch (_) { return _cleanFileName(m.group(1)!); }
+      }
       return 'Torrent_${DateTime.now().millisecondsSinceEpoch}';
     }
     final uri = Uri.tryParse(trimmed);
@@ -187,10 +188,9 @@ class UrlMetadataHelper {
   }
 
   static UrlMetadata _resolveMagnet(String magnetUri) {
-    final uri = Uri.tryParse(magnetUri);
-    final raw = uri?.queryParameters['dn'];
-    final dn = (raw?.isNotEmpty == true) ? _cleanFileName(Uri.decodeComponent(raw!.replaceAll('+', ' '))) : 'Torrent_${DateTime.now().millisecondsSinceEpoch}';
-    return UrlMetadata(fileName: dn, fileExtension: _extractExtension(dn), totalBytes: -1, supportsResume: true, finalUrl: magnetUri);
+    final dn = extractCandidateName(magnetUri);
+    final ext = dn.contains('.') ? _extractExtension(dn) : 'torrent';
+    return UrlMetadata(fileName: dn, fileExtension: ext, totalBytes: -1, supportsResume: true, finalUrl: magnetUri);
   }
 
   static UrlMetadata _fallback(String def) => UrlMetadata(fileName: def, fileExtension: 'bin', totalBytes: -1, supportsResume: true, finalUrl: '');
