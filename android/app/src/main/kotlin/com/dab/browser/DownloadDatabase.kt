@@ -112,6 +112,7 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                     DownloadStatus.PENDING
                 }
 
+                val isTor = TorrentEngine.isMagnetOrTorrent(url)
                 val task = DownloadTask(
                     id = id,
                     url = url,
@@ -122,6 +123,7 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                     speedLimitBytesPerSec = speedLimit,
                     status = status,
                     errorMessage = errorMsg,
+                    isTorrent = isTor,
                     finalUrl = finalUrl,
                     resolvedContentType = contentType,
                     referer = referer

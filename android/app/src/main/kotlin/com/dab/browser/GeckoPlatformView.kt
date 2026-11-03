@@ -15,6 +15,13 @@ class GeckoPlatformView(
     messenger: BinaryMessenger
 ) : PlatformView, MethodChannel.MethodCallHandler {
 
+    companion object {
+        private val downloadExtensions = listOf(
+            ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".bin", ".iso",
+            ".mp4", ".mkv", ".avi", ".mp3", ".pdf", ".dmg", ".exe", ".torrent"
+        )
+    }
+
     private val geckoView = GeckoView(context)
     private val session = GeckoSession(
         GeckoSessionSettings.Builder()
@@ -26,7 +33,6 @@ class GeckoPlatformView(
 
     init {
         channel.setMethodCallHandler(this)
-        geckoView.setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
         runtime = GeckoRuntimeProvider.get(context)
         session.open(runtime!!)
         geckoView.setSession(session)
@@ -47,11 +53,6 @@ class GeckoPlatformView(
             session.loadUri(initialUrl)
         }
     }
-
-    private val downloadExtensions = listOf(
-        ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".bin", ".iso",
-        ".mp4", ".mkv", ".avi", ".mp3", ".pdf", ".dmg", ".exe", ".torrent"
-    )
 
     private fun isDownloadable(url: String): Boolean {
         val clean = url.substringBefore('?').substringBefore('#')
@@ -100,7 +101,7 @@ class GeckoPlatformView(
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-                return null
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
             override fun onNewSession(s: GeckoSession, uri: String): GeckoResult<GeckoSession>? {

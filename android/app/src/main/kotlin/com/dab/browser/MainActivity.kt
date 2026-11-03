@@ -50,8 +50,9 @@ class MainActivity : FlutterActivity() {
                     val segs = call.argument<Int>("segmentsCount") ?: 8
                     val startNow = call.argument<Boolean>("startNow") ?: true
                     val ref = call.argument<String>("referer")
+                    val totalBytes = (call.argument<Number>("totalBytes"))?.toLong() ?: -1L
                     if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
-                        downloadService?.startDownload(id, url, dest, segs, startNow, ref); result.success(true)
+                        downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes); result.success(true)
                     } else result.error("INVALID_ARGS", "Missing args", null)
                 }
                 "getPublicDownloadDirectory" -> {
@@ -90,6 +91,12 @@ class MainActivity : FlutterActivity() {
                 "pauseDownload" -> { downloadService?.pauseDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
                 "resumeDownload" -> { downloadService?.resumeDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
                 "cancelDownload" -> { downloadService?.cancelDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
+                "deleteDownload" -> {
+                    val taskId = call.argument<String>("taskId") ?: ""
+                    val deleteFile = call.argument<Boolean>("deleteFile") ?: false
+                    downloadService?.deleteDownload(taskId, deleteFile)
+                    result.success(true)
+                }
                 "pauseAll" -> { downloadService?.pauseAll(); result.success(true) }
                 "resumeAll" -> { downloadService?.resumeAll(); result.success(true) }
                 "scheduleSeeding" -> {

@@ -31,6 +31,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   Timer? _debounceTimer;
   String _ext = 'bin';
   String _sizeText = 'Resolving file info...';
+  int _resolvedTotalBytes = -1;
   bool _supportsResume = true;
   String _storageText = 'Calculating storage...';
   String _storagePath = '';
@@ -94,11 +95,15 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   }
 
   Future<void> _probe(String url) async {
-    if (url.trim().isEmpty) return;
-    setState(() => _sizeText = 'Resolving file info...');
-    final meta = await UrlMetadataHelper.resolve(url, referer: _refCtrl.text.trim());
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return;
+    final isMag = trimmed.toLowerCase().startsWith('magnet:');
+    setState(() => _sizeText = isMag ? 'Connecting to trackers to resolve size...' : 'Resolving file info...');
+    if (isMag) await Future<void>.delayed(const Duration(milliseconds: 600));
+    final meta = await UrlMetadataHelper.resolve(trimmed, referer: _refCtrl.text.trim());
     if (!mounted) return;
     setState(() {
+      _resolvedTotalBytes = meta.totalBytes;
       _nameCtrl.text = meta.fileName;
       _ext = meta.fileExtension;
       _supportsResume = meta.supportsResume;
@@ -123,6 +128,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       taskId: '${DateTime.now().millisecondsSinceEpoch}_${DateTime.now().microsecond}',
       url: rawUrl, destinationPath: dest, segmentsCount: 4, startNow: startNow,
       referer: ref.isNotEmpty ? ref : null,
+      totalBytes: _resolvedTotalBytes > 0 ? _resolvedTotalBytes : null,
     );
     if (mounted) {
       Navigator.pop(context, ok);

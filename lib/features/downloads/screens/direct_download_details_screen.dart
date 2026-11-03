@@ -53,14 +53,10 @@ class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScree
   }
 
   Future<void> _deleteTask() async {
-    DeleteDownloadDialog.show(
-      context,
-      task: _task,
-      service: _service,
-      onDeleted: () {
-        if (mounted) Navigator.of(context).maybePop();
-      },
-    );
+    final deleted = await DeleteDownloadDialog.show(context, task: _task, service: _service);
+    if (deleted == true && mounted) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   @override

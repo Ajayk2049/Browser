@@ -8,22 +8,22 @@ import '../services/download_service.dart';
 class DeleteDownloadDialog extends StatefulWidget {
   final DownloadTask task;
   final DownloadService service;
-  final VoidCallback onDeleted;
+  final VoidCallback? onDeleted;
 
   const DeleteDownloadDialog({
     super.key,
     required this.task,
     required this.service,
-    required this.onDeleted,
+    this.onDeleted,
   });
 
-  static Future<void> show(
+  static Future<bool?> show(
     BuildContext context, {
     required DownloadTask task,
     required DownloadService service,
-    required VoidCallback onDeleted,
+    VoidCallback? onDeleted,
   }) {
-    return showDialog<void>(
+    return showDialog<bool>(
       context: context,
       builder: (_) => DeleteDownloadDialog(
         task: task,
@@ -46,12 +46,10 @@ class _DeleteDownloadDialogState extends State<DeleteDownloadDialog> {
   }
 
   Future<void> _handleConfirm() async {
-    final nav = Navigator.of(context);
-    final sm = ScaffoldMessenger.of(context);
     final willPurge = _deleteFromStorage;
     final path = widget.task.destinationPath;
 
-    await widget.service.cancelDownload(widget.task.id);
+    await widget.service.deleteDownload(widget.task.id, deleteFile: willPurge);
 
     if (willPurge && path.isNotEmpty) {
       try {
@@ -62,10 +60,11 @@ class _DeleteDownloadDialogState extends State<DeleteDownloadDialog> {
       } catch (_) {}
     }
 
-    widget.onDeleted();
-    nav.pop();
+    if (!mounted) return;
+    widget.onDeleted?.call();
+    Navigator.of(context).pop(true);
 
-    sm.showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(willPurge ? 'Download and file deleted' : 'Download removed from list'),
         duration: const Duration(seconds: 2),
@@ -103,7 +102,7 @@ class _DeleteDownloadDialogState extends State<DeleteDownloadDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
         ),
         TextButton(
@@ -114,4 +113,3 @@ class _DeleteDownloadDialogState extends State<DeleteDownloadDialog> {
     );
   }
 }
-

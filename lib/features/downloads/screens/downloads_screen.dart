@@ -45,8 +45,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   void _onTaskUpdate(DownloadTask task) {
     if (!mounted) return;
-    setState(() => _tasks[task.id] = task);
-    _ensureTaskMetadata(task);
+    setState(() => task.status == DownloadStatus.canceled ? _tasks.remove(task.id) : _tasks[task.id] = task);
+    if (task.status != DownloadStatus.canceled) _ensureTaskMetadata(task);
   }
 
   void _ensureTaskMetadata(DownloadTask task) {
@@ -79,8 +79,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     if (mounted) {
       setState(() {
         for (final t in nativeTasks) {
-          _tasks[t.id] = t;
-          _ensureTaskMetadata(t);
+          if (t.status != DownloadStatus.canceled) {
+            _tasks[t.id] = t;
+            _ensureTaskMetadata(t);
+          }
         }
         _isLoading = false;
       });
@@ -117,15 +119,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     if (mounted) unawaited(AddDownloadDialog.show(context, initialUrl: text));
   }
 
-  void _showDeleteConfirmDialog(DownloadTask task) {
-    DeleteDownloadDialog.show(
-      context,
-      task: task,
-      service: _service,
-      onDeleted: () {
-        if (mounted) setState(() => _tasks.remove(task.id));
-      },
-    );
+  Future<void> _showDeleteConfirmDialog(DownloadTask task) async {
+    final deleted = await DeleteDownloadDialog.show(context, task: task, service: _service);
+    if (deleted == true && mounted) setState(() => _tasks.remove(task.id));
   }
 
   List<DownloadTask> _getFilteredTasks() {
@@ -194,9 +190,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                 for (final task in filteredTasks) ...[
                   DownloadTaskCard(
                     task: task,
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => task.isTorrent ? TorrentDetailsScreen(initialTask: task) : DirectDownloadDetailsScreen(initialTask: task),
-                    )),
+                    onTap: () async {
+                      final deleted = await Navigator.of(context).push<bool>(MaterialPageRoute(
+                        builder: (_) => task.isTorrent ? TorrentDetailsScreen(initialTask: task) : DirectDownloadDetailsScreen(initialTask: task),
+                      ));
+                      if (deleted == true && mounted) setState(() => _tasks.remove(task.id));
+                    },
                     onDelete: () => _showDeleteConfirmDialog(task),
                     onLongPress: () => _showDeleteConfirmDialog(task),
                   ),

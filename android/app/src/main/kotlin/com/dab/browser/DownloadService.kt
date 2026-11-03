@@ -73,11 +73,12 @@ class DownloadService : Service() {
         }
     }
 
-    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null) {
+    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L) {
         val isTor = TorrentEngine.isMagnetOrTorrent(url)
         val task = allTasks.getOrPut(taskId) {
-            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer)
+            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes)
         }
+        if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer
         if (startNow) { db.upsertTask(task); enqueueTask(task) } else {
             task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
@@ -169,11 +170,28 @@ class DownloadService : Service() {
 
     fun resumeDownload(taskId: String) = allTasks[taskId]?.let { enqueueTask(it) }
 
-    fun cancelDownload(taskId: String) {
-        taskQueue.remove(taskId); val task = allTasks.remove(taskId)
-        activeEngines.remove(taskId)?.cancel(); activeTorrentEngines.remove(taskId)?.cancel()
-        task?.let { it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true) }
-        db.deleteTask(taskId); processQueue(); checkAutoStop()
+    fun cancelDownload(taskId: String) = deleteDownload(taskId, deleteFile = false)
+
+    fun deleteDownload(taskId: String, deleteFile: Boolean = false) {
+        taskQueue.remove(taskId)
+        val task = allTasks.remove(taskId)
+        activeEngines.remove(taskId)?.cancel()
+        activeTorrentEngines.remove(taskId)?.cancel()
+        task?.let {
+            it.status = DownloadStatus.CANCELED
+            dispatchProgress(it, isStateChange = true)
+            if (deleteFile && it.destinationPath.isNotEmpty()) {
+                try {
+                    val f = File(it.destinationPath)
+                    if (f.exists()) f.delete()
+                    val part = File("${it.destinationPath}.part")
+                    if (part.exists()) part.delete()
+                } catch (_: Exception) {}
+            }
+        }
+        db.deleteTask(taskId)
+        processQueue()
+        checkAutoStop()
     }
 
     fun pauseAll() {

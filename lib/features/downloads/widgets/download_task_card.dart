@@ -139,7 +139,10 @@ class DownloadTaskCard extends StatelessWidget {
               ),
               if (isActive) ...[
                 const SizedBox(height: AppSpacing.x3),
-                _buildMultithreadedChunks(trackColor, fillColor),
+                if (task.isTorrent || task.url.startsWith('magnet:?') || task.destinationPath.endsWith('.torrent'))
+                  _buildTorrentProgressBar(trackColor, fillColor)
+                else
+                  _buildMultithreadedChunks(trackColor, fillColor),
               ],
             ],
           ),
@@ -182,6 +185,21 @@ class DownloadTaskCard extends StatelessWidget {
           DownloadService().resumeDownload(task.id);
         }
       },
+    );
+  }
+
+  Widget _buildTorrentProgressBar(Color trackColor, Color fillColor) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        height: 14,
+        color: trackColor,
+        child: FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: task.progress.clamp(0.0, 1.0),
+          child: Container(color: fillColor),
+        ),
+      ),
     );
   }
 

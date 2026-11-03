@@ -29,13 +29,10 @@ class UrlMetadataHelper {
         final sName = nativeRes['suggestedFileName'] as String?;
         final supRanges = nativeRes['supportsRanges'] as bool? ?? false;
         final fUri = Uri.tryParse(fUrl) ?? uri;
-
         final rawName = sName ?? (fUri != null ? (_parseQueryParams(fUri) ?? _parsePathSegment(fUri)) : null);
         final cleanName = _cleanFileName(rawName ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
-        final ext = _extractExtension(cleanName);
-
         if (Env.enableLogging) developer.log('NATIVE PROBE: url=$fUrl len=$cLen ranges=$supRanges name=$cleanName', name: 'Probe');
-        if (cLen > 0) return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
+        if (cLen > 0) return UrlMetadata(fileName: cleanName, fileExtension: _extractExtension(cleanName), totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
       }
     } catch (e) {
       if (Env.enableLogging) developer.log('Native probe fallback: $e', name: 'Probe');
@@ -43,76 +40,38 @@ class UrlMetadataHelper {
 
     try {
       final dio = DioClient.instance;
-      final reqHeaders = <String, dynamic>{
-        'Range': 'bytes=0-0',
-        'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
-        'Accept': '*/*',
-        'Referer': ?ref,
-      };
-
-      var response = await dio.get<dynamic>(
-        trimmed,
-        options: Options(headers: reqHeaders, followRedirects: true, maxRedirects: 8, responseType: ResponseType.stream, validateStatus: (s) => s != null && s < 500),
+      final opt = Options(
+        headers: <String, dynamic>{'Range': 'bytes=0-0', 'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0', 'Accept': '*/*', 'Referer': ?ref},
+        followRedirects: true, maxRedirects: 8, responseType: ResponseType.stream, validateStatus: (s) => s != null && s < 500,
       );
 
+      var response = await dio.get<dynamic>(trimmed, options: opt);
       if (response.statusCode == 429) {
         final retrySec = int.tryParse(response.headers.value('retry-after') ?? '') ?? 3;
         await Future<void>.delayed(Duration(seconds: retrySec.clamp(1, 10)));
-        response = await dio.get<dynamic>(
-          trimmed,
-          options: Options(headers: reqHeaders, followRedirects: true, maxRedirects: 8, responseType: ResponseType.stream, validateStatus: (s) => s != null && s < 500),
-        );
+        response = await dio.get<dynamic>(trimmed, options: opt);
       }
+      try { final b = response.data; if (b is ResponseBody) unawaited(b.stream.listen(null).cancel()); } catch (_) {}
 
-      try {
-        final body = response.data;
-        if (body is ResponseBody) unawaited(body.stream.listen(null).cancel());
-      } catch (_) {}
-
-      final headers = response.headers;
-      final finalUrl = response.realUri.toString();
-      final code = response.statusCode ?? 0;
-      final cr = headers.value('content-range');
-      final clRaw = int.tryParse(headers.value('content-length') ?? '') ?? -1;
+      final headers = response.headers, finalUrl = response.realUri.toString(), code = response.statusCode ?? 0;
+      final cr = headers.value('content-range'), clRaw = int.tryParse(headers.value('content-length') ?? '') ?? -1;
       int len = -1;
-
-      if (cr != null && cr.contains('/')) {
-        final total = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
-        if (total > 0) len = total;
-      }
+      if (cr != null && cr.contains('/')) len = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
       if (len <= 0 && (clRaw > 1 || code == 200)) len = clRaw;
       if (code != 200 && code != 206 && code != 416) len = -1;
 
       if (len <= 0 && (code == 200 || code == 206 || code == 416)) {
         try {
-          final head = await dio.head<dynamic>(
-            finalUrl,
-            options: Options(
-              headers: <String, dynamic>{
-                'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
-                'Accept': '*/*',
-                'Referer': ?ref,
-              },
-              followRedirects: true,
-              maxRedirects: 8,
-              validateStatus: (s) => s != null && s < 500,
-            ),
-          );
+          final head = await dio.head<dynamic>(finalUrl, options: opt);
           final hl = int.tryParse(head.headers.value('content-length') ?? '') ?? -1;
           if (hl > 0) len = hl;
         } catch (_) {}
       }
 
-      final String? name = _parseContentDisposition(headers.value('content-disposition')) ??
-          _parseQueryParams(response.realUri) ??
-          _parsePathSegment(response.realUri);
-
+      final String? name = _parseContentDisposition(headers.value('content-disposition')) ?? _parseQueryParams(response.realUri) ?? _parsePathSegment(response.realUri);
       final cleanName = _cleanFileName(name ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
-      final ext = _extractExtension(cleanName);
-      final acceptRanges = headers.value('accept-ranges');
-      final resume = acceptRanges?.toLowerCase().contains('bytes') == true || cr != null;
-
-      return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: len, supportsResume: resume, finalUrl: finalUrl);
+      final resume = headers.value('accept-ranges')?.toLowerCase().contains('bytes') == true || cr != null;
+      return UrlMetadata(fileName: cleanName, fileExtension: _extractExtension(cleanName), totalBytes: len, supportsResume: resume, finalUrl: finalUrl);
     } catch (e) {
       if (Env.enableLogging) developer.log('Probe exception: $e', name: 'Probe');
       final raw = uri?.pathSegments.lastOrNull;
@@ -124,16 +83,14 @@ class UrlMetadataHelper {
   static String? _parseContentDisposition(String? header) {
     if (header == null || header.isEmpty) return null;
     final utf8 = RegExp(r"filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;]+)", caseSensitive: false).firstMatch(header);
-    if (utf8 != null) {
-      final raw = utf8.group(1)?.trim() ?? '';
-      try { return Uri.decodeComponent(raw.replaceAll('"', '')); } catch (_) { return raw.replaceAll('"', ''); }
-    }
+    if (utf8 != null) return _decodeDisp(utf8.group(1));
     final std = RegExp(r'filename\s*=\s*"([^"]+)"|filename\s*=\s*([^; ]+)', caseSensitive: false).firstMatch(header);
-    if (std != null) {
-      final raw = std.group(1) ?? std.group(2) ?? '';
-      try { return Uri.decodeComponent(raw.replaceAll('"', '').trim()); } catch (_) { return raw.replaceAll('"', '').trim(); }
-    }
-    return null;
+    return std != null ? _decodeDisp(std.group(1) ?? std.group(2)) : null;
+  }
+
+  static String _decodeDisp(String? raw) {
+    final s = (raw ?? '').trim().replaceAll('"', '');
+    try { return Uri.decodeComponent(s); } catch (_) { return s; }
   }
 
   static String? _parseQueryParams(Uri uri) {
@@ -190,7 +147,30 @@ class UrlMetadataHelper {
   static UrlMetadata _resolveMagnet(String magnetUri) {
     final dn = extractCandidateName(magnetUri);
     final ext = dn.contains('.') ? _extractExtension(dn) : 'torrent';
-    return UrlMetadata(fileName: dn, fileExtension: ext, totalBytes: -1, supportsResume: true, finalUrl: magnetUri);
+    final size = extractTorrentSize(magnetUri, dn);
+    return UrlMetadata(fileName: dn, fileExtension: ext, totalBytes: size, supportsResume: true, finalUrl: magnetUri);
+  }
+
+  static int extractTorrentSize(String magnetUri, String name) {
+    final xlMatch = RegExp(r'[?&]xl=([0-9]+)', caseSensitive: false).firstMatch(magnetUri);
+    if (xlMatch != null) {
+      final xl = int.tryParse(xlMatch.group(1)!);
+      if (xl != null && xl > 0) return xl;
+    }
+    final sizeMatch = RegExp(r'(\d+(?:\.\d+)?)\s*(GB|MB|GiB|MiB)\b', caseSensitive: false).firstMatch(name);
+    if (sizeMatch != null) {
+      final numVal = double.tryParse(sizeMatch.group(1)!) ?? 0.0;
+      final mult = sizeMatch.group(2)!.toUpperCase().startsWith('G') ? 1024 * 1024 * 1024 : 1024 * 1024;
+      final bytes = (numVal * mult).toInt();
+      if (bytes > 0) return bytes;
+    }
+    final lower = name.toLowerCase();
+    if (lower.contains('2160p') || lower.contains('4k')) return 8 * 1024 * 1024 * 1024;
+    if (lower.contains('1080p')) return 3 * 1024 * 1024 * 1024;
+    if (lower.contains('720p')) return 1400 * 1024 * 1024;
+    if (lower.contains('480p') || lower.contains('dvdrip')) return 700 * 1024 * 1024;
+    if (lower.contains('season') || lower.contains('complete')) return 12 * 1024 * 1024 * 1024;
+    return 2800 * 1024 * 1024;
   }
 
   static UrlMetadata _fallback(String def) => UrlMetadata(fileName: def, fileExtension: 'bin', totalBytes: -1, supportsResume: true, finalUrl: '');

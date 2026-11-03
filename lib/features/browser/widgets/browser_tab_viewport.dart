@@ -28,57 +28,55 @@ class BrowserTabViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     return KeyedSubtree(
       key: ValueKey(tab.id),
-      child: RepaintBoundary(
-        child: GeckoBrowserView(
-          initialUrl: tab.url,
-          controller: tab.controller,
-          onPageStarted: (url) {
-            tab..url = url..isLoading = true..error = null;
-            if (isActive) onUrlChanged(url);
-          },
-          onPageFinished: (ok) {
-            tab.isLoading = false;
-            if (ok && tab.url.isNotEmpty && !tab.isHome) {
-              HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
-            }
+      child: GeckoBrowserView(
+        initialUrl: tab.url,
+        controller: tab.controller,
+        onPageStarted: (url) {
+          tab..url = url..isLoading = true..error = null;
+          if (isActive) onUrlChanged(url);
+        },
+        onPageFinished: (ok) {
+          tab.isLoading = false;
+          if (ok && tab.url.isNotEmpty && !tab.isHome) {
+            HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
+          }
+          if (isActive) onSync();
+        },
+        onProgressChanged: (p) {
+          final newProgress = p / 100.0;
+          final shouldSync = (newProgress - tab.progress).abs() >= 0.1 || newProgress >= 1.0;
+          tab.progress = newProgress;
+          if (isActive && shouldSync) onSync();
+        },
+        onTitleChanged: (title) {
+          if (title.isNotEmpty) {
+            tab.title = title;
             if (isActive) onSync();
-          },
-          onProgressChanged: (p) {
-            final newProgress = p / 100.0;
-            final shouldSync = (newProgress - tab.progress).abs() >= 0.1 || newProgress >= 1.0;
-            tab.progress = newProgress;
-            if (isActive && shouldSync) onSync();
-          },
-          onTitleChanged: (title) {
-            if (title.isNotEmpty) {
-              tab.title = title;
-              if (isActive) onSync();
-            }
-          },
-          onLocationChanged: (url) {
-            if (url.isEmpty) return;
-            tab.url = url;
-            if (isActive) {
-              onUrlChanged(url);
-              if (UrlHelper.isDownloadable(url)) onDownloadPrompt(url);
-            }
-          },
-          onDownloadPrompt: (url) {
-            if (isActive) onDownloadPrompt(url);
-          },
-          onCanGoBack: (can) {
-            tab.canGoBack = can;
-            if (isActive) onSync();
-          },
-          onCanGoForward: (can) {
-            tab.canGoForward = can;
-            if (isActive) onSync();
-          },
-          onWebResourceError: (uri, code, cat) {
-            tab..error = 'Could not reach this page ($cat error $code)'..isLoading = false;
-            if (isActive) onSync();
-          },
-        ),
+          }
+        },
+        onLocationChanged: (url) {
+          if (url.isEmpty) return;
+          tab.url = url;
+          if (isActive) {
+            onUrlChanged(url);
+            if (UrlHelper.isDownloadable(url)) onDownloadPrompt(url);
+          }
+        },
+        onDownloadPrompt: (url) {
+          if (isActive) onDownloadPrompt(url);
+        },
+        onCanGoBack: (can) {
+          tab.canGoBack = can;
+          if (isActive) onSync();
+        },
+        onCanGoForward: (can) {
+          tab.canGoForward = can;
+          if (isActive) onSync();
+        },
+        onWebResourceError: (uri, code, cat) {
+          tab..error = 'Could not reach this page ($cat error $code)'..isLoading = false;
+          if (isActive) onSync();
+        },
       ),
     );
   }
