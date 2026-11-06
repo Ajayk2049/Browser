@@ -37,14 +37,8 @@ class GeckoPlatformView(
         session.open(runtime!!)
         geckoView.setSession(session)
 
-        geckoView.isFocusable = true
-        geckoView.isFocusableInTouchMode = true
-        geckoView.setOnTouchListener { v, _ ->
-            if (!v.hasFocus()) {
-                v.requestFocus()
-            }
-            false
-        }
+        geckoView.isFocusable = true; geckoView.isFocusableInTouchMode = true
+        geckoView.setOnTouchListener { v, _ -> if (!v.hasFocus()) v.requestFocus(); false }
 
         setupDelegates()
 
@@ -171,6 +165,21 @@ class GeckoPlatformView(
                 runtime?.settings?.fontSizeFactor = factor
                 result.success(true)
             }
+            "findInPage" -> {
+                val text = call.argument<String>("text") ?: ""
+                val forward = call.argument<Boolean>("forward") ?: true
+                if (text.isNotEmpty()) {
+                    val flags = if (forward) GeckoSession.FINDER_FIND_FORWARD else GeckoSession.FINDER_FIND_BACKWARDS
+                    session.finder.find(text, flags).accept { res ->
+                        invokeFlutter("onFinderResult", mapOf("current" to (res?.current ?: 0), "total" to (res?.total ?: 0), "searchString" to (res?.searchString ?: "")))
+                    }
+                } else {
+                    session.finder.clear()
+                    invokeFlutter("onFinderResult", mapOf("current" to 0, "total" to 0, "searchString" to ""))
+                }
+                result.success(true)
+            }
+            "clearFindInPage" -> { session.finder.clear(); result.success(true) }
             else -> result.notImplemented()
         }
     }

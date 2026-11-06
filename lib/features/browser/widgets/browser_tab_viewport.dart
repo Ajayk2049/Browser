@@ -13,6 +13,7 @@ class BrowserTabViewport extends StatelessWidget {
   final bool isActive;
   final ValueChanged<String> onUrlChanged;
   final ValueChanged<String> onDownloadPrompt;
+  final void Function(int current, int total)? onFinderResult;
   final VoidCallback onSync;
 
   const BrowserTabViewport({
@@ -21,6 +22,7 @@ class BrowserTabViewport extends StatelessWidget {
     required this.isActive,
     required this.onUrlChanged,
     required this.onDownloadPrompt,
+    this.onFinderResult,
     required this.onSync,
   });
 
@@ -64,6 +66,9 @@ class BrowserTabViewport extends StatelessWidget {
         },
         onDownloadPrompt: (url) {
           if (isActive) onDownloadPrompt(url);
+        },
+        onFinderResult: (cur, tot) {
+          if (isActive) onFinderResult?.call(cur, tot);
         },
         onCanGoBack: (can) {
           tab.canGoBack = can;

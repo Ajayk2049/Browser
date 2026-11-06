@@ -36,6 +36,14 @@ class GeckoBrowserController {
   Future<void> setFontSizeFactor(double factor) async {
     await _channel?.invokeMethod('setFontSizeFactor', {'factor': factor});
   }
+
+  Future<void> findInPage(String text, {bool forward = true}) async {
+    await _channel?.invokeMethod('findInPage', {'text': text, 'forward': forward});
+  }
+
+  Future<void> clearFindInPage() async {
+    await _channel?.invokeMethod('clearFindInPage');
+  }
 }
 
 /// Native AndroidView embedding official Mozilla GeckoView with Hybrid Composition.
@@ -50,6 +58,7 @@ class GeckoBrowserView extends StatefulWidget {
   final ValueChanged<bool>? onCanGoBack;
   final ValueChanged<bool>? onCanGoForward;
   final ValueChanged<String>? onDownloadPrompt;
+  final void Function(int current, int total)? onFinderResult;
   final void Function(String uri, int code, String category)? onWebResourceError;
 
   const GeckoBrowserView({
@@ -64,6 +73,7 @@ class GeckoBrowserView extends StatefulWidget {
     this.onCanGoBack,
     this.onCanGoForward,
     this.onDownloadPrompt,
+    this.onFinderResult,
     this.onWebResourceError,
   });
 
@@ -115,6 +125,12 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
       case 'onDownloadPrompt':
         final url = args['url'] as String? ?? '';
         if (url.isNotEmpty) widget.onDownloadPrompt?.call(url);
+        break;
+      case 'onFinderResult':
+        widget.onFinderResult?.call(
+          (args['current'] as num?)?.toInt() ?? 0,
+          (args['total'] as num?)?.toInt() ?? 0,
+        );
         break;
       case 'onWebResourceError':
         widget.onWebResourceError?.call(

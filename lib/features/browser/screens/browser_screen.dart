@@ -19,9 +19,8 @@ import '../widgets/browser_error_banner.dart';
 import '../widgets/browser_home_view.dart';
 import '../widgets/browser_overflow_menu.dart';
 import '../widgets/browser_shortcut_helper.dart';
-import '../widgets/browser_tabs_sheet.dart';
 import '../widgets/browser_tab_viewport.dart';
-import '../widgets/media_grabber_sheet.dart';
+import '../widgets/find_in_page_bar.dart';
 import '../widgets/page_security_sheet.dart';
 
 /// Pure native GeckoView browser screen with direct delegate control.
@@ -42,6 +41,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   late String _activeTabId;
   int _tabSequence = 0;
   bool _isPromptingDownload = false;
+  bool _isFindInPageVisible = false;
+  int _findCurrent = 0;
+  int _findTotal = 0;
+  String _findQuery = '';
 
   SearchEngine get _selectedEngine => SearchEngineSettingsService.instance.settings.defaultEngine;
 
@@ -118,21 +121,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
   }
 
-  Future<void> _promptDownload(String url) async {
-    if (_isPromptingDownload || url.isEmpty) return;
-    _isPromptingDownload = true;
-    try {
-      if (mounted) await AddDownloadDialog.show(context, initialUrl: url);
-    } finally { _isPromptingDownload = false; }
-  }
+  Future<void> _promptDownload(String url) async => BrowserShortcutHelper.promptDownload(context, url);
 
   void _selectTab(String id) {
     if (id == _activeTabId) return;
+    if (_isFindInPageVisible) { _isFindInPageVisible = false; _activeTab.controller.clearFindInPage(); }
     final tab = _tabs.firstWhere((t) => t.id == id);
     setState(() { _activeTabId = id; _urlController.text = tab.isHome ? '' : tab.url; _detectedMedia.clear(); });
   }
 
-  void _newTab() => setState(() { _activeTabId = _createTab().id; _urlController.text = ''; _detectedMedia.clear(); });
+  void _newTab() => setState(() {
+    if (_isFindInPageVisible) { _isFindInPageVisible = false; _activeTab.controller.clearFindInPage(); }
+    _activeTabId = _createTab().id; _urlController.text = ''; _detectedMedia.clear();
+  });
 
   void _closeTab(String id) {
     setState(() {
@@ -148,16 +149,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _openTabsSheet() async {
     if (_tabs.isEmpty) return;
-    await showModalBottomSheet<void>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (sCtx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => BrowserTabsSheet(
-          tabs: [for (final t in _tabs) t.info(isActive: t.id == _activeTabId)],
-          onSelect: (id) { _selectTab(id); Navigator.of(sCtx).pop(); },
-          onClose: (id) { _closeTab(id); setSheetState(() {}); },
-          onNewTab: () { _newTab(); Navigator.of(sCtx).pop(); },
-        ),
-      ),
+    await BrowserShortcutHelper.openTabsSheet(
+      context,
+      tabs: [for (final t in _tabs) t.info(isActive: t.id == _activeTabId)],
+      onSelect: _selectTab,
+      onClose: _closeTab,
+      onNewTab: _newTab,
     );
   }
 
@@ -173,41 +170,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _handleMenuAction(BrowserMenuAction action) {
     switch (action) {
+      case BrowserMenuAction.findInPage:
+        if (_activeTab.isHome) {
+          ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(
+            content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2),
+          ));
+        } else {
+          setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
+        }
       case BrowserMenuAction.settings: context.push('/settings');
       case BrowserMenuAction.downloadManager: context.push('/downloads');
       case BrowserMenuAction.bookmarks: _openBookmarks();
       case BrowserMenuAction.history: _openHistory();
-      default:
-        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
-          content: Text('${action.label} is not wired up yet'),
-          behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
-        ));
     }
   }
 
-  Future<void> _toggleBookmark() async {
-    if (_activeTab.isHome || _activeTab.url.isEmpty) return;
-    final wasAdded = await BookmarksService.instance.toggleBookmark(
-      url: _activeTab.url, title: _activeTab.title.isNotEmpty ? _activeTab.title : _activeTab.url,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(
-      content: Text(wasAdded ? 'Page added to bookmarks' : 'Bookmark removed'),
-      behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2),
-    ));
-  }
-
-  void _sharePage() => (_activeTab.url.isNotEmpty && !_activeTab.isHome)
-      ? const MethodChannel('com.dab/downloader').invokeMethod('shareUrl', {'url': _activeTab.url, 'title': _activeTab.title})
-      : null;
-
+  void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab);
+  void _sharePage() => BrowserShortcutHelper.sharePage(_activeTab.url, _activeTab.title);
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
-
-  void _openMediaGrabber() => showModalBottomSheet<void>(
-        context: context,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal))),
-        builder: (_) => MediaGrabberSheet(items: _detectedMedia),
-      );
+  void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +236,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   children: [for (final tab in _tabs) _buildTabView(tab)],
                 ),
               ),
+              if (_isFindInPageVisible)
+                FindInPageBar(
+                  currentMatch: _findCurrent,
+                  totalMatches: _findTotal,
+                  onQueryChanged: (q) {
+                    _findQuery = q;
+                    _activeTab.controller.findInPage(q, forward: true);
+                  },
+                  onNext: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: true) : null,
+                  onPrevious: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: false) : null,
+                  onClose: () {
+                    setState(() => _isFindInPageVisible = false);
+                    _activeTab.controller.clearFindInPage();
+                  },
+                ),
             ],
           ),
         ),
@@ -290,6 +286,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       isActive: tab.id == _activeTabId,
       onUrlChanged: (url) => setState(() { _urlController.text = url; _detectedMedia.clear(); }),
       onDownloadPrompt: _promptDownload,
+      onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }),
       onSync: () => setState(() {}),
     );
   }

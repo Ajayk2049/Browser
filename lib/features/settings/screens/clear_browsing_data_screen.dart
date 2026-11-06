@@ -2,19 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../browser/services/history_service.dart';
+import '../widgets/clear_browsing_data_components.dart';
 import '../widgets/settings_app_bar.dart';
-
-enum ClearTimeRange {
-  lastHour('Last hour', Duration(hours: 1)),
-  last24Hours('Last 24 hours', Duration(hours: 24)),
-  last7Days('Last 7 days', Duration(days: 7)),
-  last4Weeks('Last 4 weeks', Duration(days: 28)),
-  allTime('All time', null);
-
-  final String label;
-  final Duration? duration;
-  const ClearTimeRange(this.label, this.duration);
-}
 
 /// Screen allowing users to purge history, cookies, and cache (Figma 2659 Dark / 2726 Light).
 /// Complies with rules.md §13, §29.2 (< 300 lines).
@@ -109,46 +98,11 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
     }
   }
 
-  void _showTimeRangePicker(bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF131722) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20.0)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: ClearTimeRange.values.map((range) {
-                final isSelected = range == _selectedTimeRange;
-                return ListTile(
-                  title: Text(
-                    range.label,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? Icon(
-                          PhosphorIcons.check,
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
-                        )
-                      : null,
-                  onTap: () {
-                    setState(() => _selectedTimeRange = range);
-                    Navigator.of(ctx).pop();
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-        );
-      },
-    );
+  void _pickTimeRange(bool isDark) async {
+    final range = await TimeRangePickerSheet.show(context, _selectedTimeRange, isDark);
+    if (range != null && mounted) {
+      setState(() => _selectedTimeRange = range);
+    }
   }
 
   @override
@@ -173,7 +127,7 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
           // 1. TIME RANGE
           _buildSectionHeader('TIME RANGE', headerColor),
           GestureDetector(
-            onTap: () => _showTimeRangePicker(isDark),
+            onTap: () => _pickTimeRange(isDark),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0),
               decoration: BoxDecoration(
@@ -224,7 +178,7 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
             ),
             child: Column(
               children: [
-                _buildRowItem(
+                ClearDataRowItem(
                   icon: PhosphorIcons.clockCounterClockwise,
                   title: 'Browsing history',
                   subtitle: 'Clears history and autocompletions',
@@ -233,7 +187,7 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
                   isDark: isDark,
                   showDivider: true,
                 ),
-                _buildRowItem(
+                ClearDataRowItem(
                   icon: PhosphorIcons.cookie,
                   title: 'Cookies & site data',
                   subtitle: 'Signs you out of most websites',
@@ -242,7 +196,7 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
                   isDark: isDark,
                   showDivider: true,
                 ),
-                _buildRowItem(
+                ClearDataRowItem(
                   icon: PhosphorIcons.lightning,
                   title: 'Cached images & files',
                   subtitle: 'Frees up ${_formatBytes(_cacheSizeBytes)} of storage',
@@ -251,7 +205,7 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
                   isDark: isDark,
                   showDivider: true,
                 ),
-                _buildRowItem(
+                ClearDataRowItem(
                   icon: PhosphorIcons.key,
                   title: 'Saved passwords',
                   subtitle: 'None saved',
@@ -301,97 +255,6 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
     );
   }
 
-  Widget _buildRowItem({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required bool isDark,
-    required bool showDivider,
-  }) {
-    final primaryTextColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    final iconBoxBg = isDark ? const Color(0xFF1A2130) : const Color(0xFFF1F5F9);
-    final dividerColor = isDark ? const Color(0xFF1A202E) : const Color(0xFFF1F5F9);
-
-    return Column(
-      children: [
-        InkWell(
-          onTap: () => onChanged(!value),
-          borderRadius: BorderRadius.circular(18.0),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
-            child: Row(
-              children: [
-                Container(
-                  width: 38.0,
-                  height: 38.0,
-                  decoration: BoxDecoration(
-                    color: iconBoxBg,
-                    borderRadius: BorderRadius.circular(10.0),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, size: 20.0, color: primaryTextColor),
-                ),
-                const SizedBox(width: 14.0),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 14.0,
-                          fontWeight: FontWeight.w600,
-                          color: primaryTextColor,
-                        ),
-                      ),
-                      const SizedBox(height: 2.0),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 11.0,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildCheckbox(value, isDark),
-              ],
-            ),
-          ),
-        ),
-        if (showDivider) Divider(height: 1.0, thickness: 1.0, color: dividerColor, indent: 68.0),
-      ],
-    );
-  }
-
-  Widget _buildCheckbox(bool isChecked, bool isDark) {
-    final borderColor = isDark ? const Color(0xFF272E3F) : const Color(0xFFCBD5E1);
-    final checkedBg = isDark ? Colors.white : const Color(0xFF0F172A);
-    final checkmarkColor = isDark ? const Color(0xFF0C0E14) : Colors.white;
-
-    return Container(
-      width: 22.0,
-      height: 22.0,
-      decoration: BoxDecoration(
-        color: isChecked ? checkedBg : Colors.transparent,
-        borderRadius: BorderRadius.circular(6.0),
-        border: Border.all(
-          color: isChecked ? checkedBg : borderColor,
-          width: 1.5,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: isChecked
-          ? Icon(PhosphorIcons.check, size: 14.0, color: checkmarkColor)
-          : null,
-    );
-  }
-
   Widget _buildSectionHeader(String title, Color color) {
     return Padding(
       padding: const EdgeInsets.only(left: 4.0, bottom: 8.0),
@@ -408,4 +271,3 @@ class _ClearBrowsingDataScreenState extends State<ClearBrowsingDataScreen> {
     );
   }
 }
-
