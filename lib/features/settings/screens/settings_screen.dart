@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import '../services/appearance_settings_service.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_group_card.dart';
 
@@ -11,6 +12,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appearanceService = AppearanceSettingsService.instance;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0C0E14) : const Color(0xFFF8FAFC);
     final headerColor = const Color(0xFF64748B);
@@ -21,107 +23,121 @@ class SettingsScreen extends StatelessWidget {
         onBack: () => Navigator.of(context).maybePop(),
         onSearch: () => _showSearchHint(context),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 32.0),
-        children: [
-          // 1. BROWSING
-          _buildSectionHeader('BROWSING', headerColor),
-          SettingsGroupCard(
-            items: [
-              SettingsRowItem(
-                icon: PhosphorIcons.house,
-                title: 'Homepage',
-                subtitle: 'Choose the page that opens on every new tab',
-                trailing: _buildChevron(isDark),
-                onTap: () => context.push('/settings/homepage'),
+      body: ListenableBuilder(
+        listenable: appearanceService,
+        builder: (context, _) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 32.0),
+            children: [
+              // 1. BROWSING
+              _buildSectionHeader('BROWSING', headerColor),
+              SettingsGroupCard(
+                items: [
+                  SettingsRowItem(
+                    icon: PhosphorIcons.house,
+                    title: 'Homepage',
+                    subtitle: 'Choose the page that opens on every new tab',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => context.push('/settings/homepage'),
+                  ),
+                  SettingsRowItem(
+                    icon: PhosphorIcons.magnifyingGlass,
+                    title: 'Default search engine',
+                    subtitle: 'Pick the engine that powers the omnibox',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => context.push('/settings/search-engine'),
+                  ),
+                ],
               ),
-              SettingsRowItem(
-                icon: PhosphorIcons.magnifyingGlass,
-                title: 'Default search engine',
-                subtitle: 'Pick the engine that powers the omnibox',
-                trailing: _buildChevron(isDark),
-                onTap: () => context.push('/settings/search-engine'),
-              ),
-            ],
-          ),
 
-          // 2. APPEARANCE
-          const SizedBox(height: 20.0),
-          _buildSectionHeader('APPEARANCE', headerColor),
-          SettingsGroupCard(
-            items: [
-              SettingsRowItem(
-                icon: PhosphorIcons.circleHalf,
-                title: 'Theme',
-                subtitle: 'Follow system, light, or dark',
-                trailing: _buildValueWithChevron(isDark ? 'Dark' : 'Light', isDark),
-                onTap: () => _showNotice(context, 'Theme matches your device system setting'),
+              // 2. APPEARANCE
+              const SizedBox(height: 20.0),
+              _buildSectionHeader('APPEARANCE', headerColor),
+              SettingsGroupCard(
+                items: [
+                  SettingsRowItem(
+                    icon: PhosphorIcons.circleHalf,
+                    title: 'Theme',
+                    subtitle: 'Follow system, light, or dark',
+                    trailing: _buildValueWithChevron(
+                      appearanceService.settings.themeModeName,
+                      isDark,
+                    ),
+                    onTap: () => context.push('/settings/theme'),
+                  ),
+                  SettingsRowItem(
+                    icon: PhosphorIcons.textAa,
+                    title: 'Text size',
+                    subtitle: 'Scale page text for easier reading',
+                    trailing: _buildValueWithChevron(
+                      '${appearanceService.textZoomPercent}%',
+                      isDark,
+                    ),
+                    onTap: () => context.push('/settings/text-size'),
+                  ),
+                ],
               ),
-              SettingsRowItem(
-                icon: PhosphorIcons.textAa,
-                title: 'Text size',
-                subtitle: 'Scale page text for easier reading',
-                trailing: _buildValueWithChevron('100%', isDark),
-                onTap: () => _showNotice(context, 'Text zoom scale is set to default (100%)'),
-              ),
-            ],
-          ),
 
-          // 3. EXTENSIONS & DATA
-          const SizedBox(height: 20.0),
-          _buildSectionHeader('EXTENSIONS & DATA', headerColor),
-          SettingsGroupCard(
-            items: [
-              SettingsRowItem(
-                icon: PhosphorIcons.puzzlePiece,
-                title: 'Extensions',
-                subtitle: 'Manage add-ons and web extensions',
-                trailing: _buildChevron(isDark),
-                onTap: () => context.push('/settings/extensions'),
+              // 3. EXTENSIONS & DATA
+              const SizedBox(height: 20.0),
+              _buildSectionHeader('EXTENSIONS & DATA', headerColor),
+              SettingsGroupCard(
+                items: [
+                  SettingsRowItem(
+                    icon: PhosphorIcons.puzzlePiece,
+                    title: 'Extensions',
+                    subtitle: 'Manage add-ons and web extensions',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => context.push('/settings/extensions'),
+                  ),
+                  SettingsRowItem(
+                    icon: PhosphorIcons.broom,
+                    title: 'Clear browsing data',
+                    subtitle: 'Erase history, cache, cookies & tokens',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => context.push('/settings/clear-data'),
+                  ),
+                ],
               ),
-              SettingsRowItem(
-                icon: PhosphorIcons.broom,
-                title: 'Clear browsing data',
-                subtitle: 'Erase history, cache, cookies & tokens',
-                trailing: _buildChevron(isDark),
-                onTap: () => _confirmClearData(context),
-              ),
-            ],
-          ),
 
-          // 4. ABOUT
-          const SizedBox(height: 20.0),
-          _buildSectionHeader('ABOUT', headerColor),
-          SettingsGroupCard(
-            items: [
-              SettingsRowItem(
-                icon: PhosphorIcons.sparkle,
-                title: 'Dab Browser',
-                subtitle: 'Version 1.2.0 (Build 418)',
-                trailing: _buildBadge('Latest', isDark),
-                onTap: () => _showNotice(context, 'Dab Browser is up to date'),
-              ),
-              SettingsRowItem(
-                icon: PhosphorIcons.article,
-                title: 'Terms & Privacy Policy',
-                subtitle: 'Zero tracking, local-first storage',
-                trailing: _buildChevron(isDark),
-                onTap: () => _showNotice(context, 'Local-first architecture with zero external data collection'),
-              ),
-              SettingsRowItem(
-                icon: PhosphorIcons.code,
-                title: 'Open Source Licenses',
-                subtitle: 'Mozilla GeckoView core & Flutter libraries',
-                trailing: _buildChevron(isDark),
-                onTap: () => showLicensePage(
-                  context: context,
-                  applicationName: 'Dab Browser',
-                  applicationVersion: '1.2.0',
-                ),
+              // 4. ABOUT
+              const SizedBox(height: 20.0),
+              _buildSectionHeader('ABOUT', headerColor),
+              SettingsGroupCard(
+                items: [
+                  SettingsRowItem(
+                    icon: PhosphorIcons.sparkle,
+                    title: 'Dab Browser',
+                    subtitle: 'Version 1.2.0 (Build 418)',
+                    trailing: _buildBadge('Latest', isDark),
+                    onTap: () => _showNotice(context, 'Dab Browser is up to date'),
+                  ),
+                  SettingsRowItem(
+                    icon: PhosphorIcons.article,
+                    title: 'Terms & Privacy Policy',
+                    subtitle: 'Zero tracking, local-first storage',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => _showNotice(
+                      context,
+                      'Local-first architecture with zero external data collection',
+                    ),
+                  ),
+                  SettingsRowItem(
+                    icon: PhosphorIcons.code,
+                    title: 'Open Source Licenses',
+                    subtitle: 'Mozilla GeckoView core & Flutter libraries',
+                    trailing: _buildChevron(isDark),
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: 'Dab Browser',
+                      applicationVersion: '1.2.0',
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -206,28 +222,5 @@ class SettingsScreen extends StatelessWidget {
 
   void _showSearchHint(BuildContext context) {
     _showNotice(context, 'Type in the omnibox to search or filter settings');
-  }
-
-  void _confirmClearData(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear browsing data'),
-        content: const Text('This will clear your temporary browser cache and cookies.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _showNotice(context, 'Browsing cache cleared');
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
   }
 }

@@ -10,6 +10,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.*
 import kotlinx.coroutines.*
+import org.mozilla.geckoview.StorageController
 import java.io.File
 
 class MainActivity : FlutterActivity() {
@@ -122,6 +123,27 @@ class MainActivity : FlutterActivity() {
                         startActivity(shareIntent); result.success(true)
                     } else result.error("INVALID_URL", "URL is empty", null)
                 }
+                "getCacheSize" -> {
+                    val cSize = getFolderSize(cacheDir) + getFolderSize(externalCacheDir)
+                    result.success(cSize)
+                }
+                "clearBrowsingData" -> {
+                    val cookies = call.argument<Boolean>("clearCookies") ?: false
+                    val cache = call.argument<Boolean>("clearCache") ?: false
+                    var flags = 0L
+                    if (cookies) flags = flags or StorageController.ClearFlags.COOKIES or StorageController.ClearFlags.DOM_STORAGES
+                    if (cache) flags = flags or StorageController.ClearFlags.NETWORK_CACHE or StorageController.ClearFlags.IMAGE_CACHE
+                    if (flags != 0L) {
+                        try { GeckoRuntimeProvider.get(this).storageController.clearData(flags) } catch (_: Exception) {}
+                    }
+                    if (cache) {
+                        try {
+                            cacheDir.deleteRecursively(); cacheDir.mkdirs()
+                            externalCacheDir?.deleteRecursively(); externalCacheDir?.mkdirs()
+                        } catch (_: Exception) {}
+                    }
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -140,5 +162,12 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         if (isBound) { unbindService(connection); isBound = false }
         super.onDestroy()
+    }
+
+    private fun getFolderSize(dir: File?): Long {
+        if (dir == null || !dir.exists()) return 0L
+        var total = 0L
+        dir.listFiles()?.forEach { total += if (it.isDirectory) getFolderSize(it) else it.length() }
+        return total
     }
 }

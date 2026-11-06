@@ -128,12 +128,20 @@ class HistoryService extends ChangeNotifier {
     await _persist();
   }
 
-  /// Completely wipes all history.
-  Future<void> clearAll() async {
-    _items.clear();
+  /// Completely wipes all history, or history within [timeRangeDuration].
+  Future<void> clearHistory({Duration? timeRangeDuration}) async {
+    if (timeRangeDuration == null) {
+      _items.clear();
+    } else {
+      final cutoff = DateTime.now().subtract(timeRangeDuration);
+      _items.removeWhere((item) => item.timestamp.isAfter(cutoff));
+    }
     notifyListeners();
     await _persist();
   }
+
+  /// Completely wipes all history.
+  Future<void> clearAll() => clearHistory();
 
   Future<void> _persist() async {
     try {

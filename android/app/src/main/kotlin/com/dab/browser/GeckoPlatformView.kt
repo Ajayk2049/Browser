@@ -48,6 +48,9 @@ class GeckoPlatformView(
 
         setupDelegates()
 
+        val fontFactor = (creationParams?.get("fontSizeFactor") as? Number)?.toFloat() ?: 1.0f
+        runtime?.settings?.fontSizeFactor = fontFactor
+
         val initialUrl = creationParams?.get("initialUrl") as? String
         if (!initialUrl.isNullOrEmpty()) {
             session.loadUri(initialUrl)
@@ -159,21 +162,13 @@ class GeckoPlatformView(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "loadUrl" -> {
-                val url = call.argument<String>("url") ?: ""
-                session.loadUri(url)
-                result.success(true)
-            }
-            "goBack" -> {
-                session.goBack()
-                result.success(true)
-            }
-            "goForward" -> {
-                session.goForward()
-                result.success(true)
-            }
-            "reload" -> {
-                session.reload()
+            "loadUrl" -> { session.loadUri(call.argument<String>("url") ?: ""); result.success(true) }
+            "goBack" -> { session.goBack(); result.success(true) }
+            "goForward" -> { session.goForward(); result.success(true) }
+            "reload" -> { session.reload(); result.success(true) }
+            "setFontSizeFactor" -> {
+                val factor = (call.argument<Number>("factor"))?.toFloat() ?: 1.0f
+                runtime?.settings?.fontSizeFactor = factor
                 result.success(true)
             }
             else -> result.notImplemented()

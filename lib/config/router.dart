@@ -3,9 +3,12 @@ import '../features/browser/screens/bookmarks_screen.dart';
 import '../features/browser/screens/browser_screen.dart';
 import '../features/browser/screens/history_screen.dart';
 import '../features/downloads/downloads.dart';
+import '../features/settings/screens/clear_browsing_data_screen.dart';
 import '../features/settings/screens/extensions_screen.dart';
 import '../features/settings/screens/homepage_settings_screen.dart';
 import '../features/settings/screens/search_engine_settings_screen.dart';
+import '../features/settings/screens/text_size_settings_screen.dart';
+import '../features/settings/screens/theme_settings_screen.dart';
 import '../features/settings/settings.dart';
 
 /// App router configuration adhering to rules.md §29.5 and §32.3.
@@ -52,6 +55,21 @@ final appRouter = GoRouter(
       path: '/settings/extensions',
       name: 'extensions_settings',
       builder: (context, state) => const ExtensionsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/theme',
+      name: 'theme_settings',
+      builder: (context, state) => const ThemeSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/text-size',
+      name: 'text_size_settings',
+      builder: (context, state) => const TextSizeSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/clear-data',
+      name: 'clear_data_settings',
+      builder: (context, state) => const ClearBrowsingDataScreen(),
     ),
   ],
 );

@@ -5,6 +5,7 @@ import 'features/browser/services/bookmarks_service.dart';
 import 'features/browser/services/history_service.dart';
 import 'features/browser/services/quick_links_service.dart';
 import 'features/downloads/downloads.dart';
+import 'features/settings/services/appearance_settings_service.dart';
 import 'features/settings/services/homepage_settings_service.dart';
 import 'features/settings/services/search_engine_settings_service.dart';
 
@@ -16,6 +17,7 @@ Future<void> main() async {
   await HistoryService.instance.init();
   await HomepageSettingsService.instance.init();
   await SearchEngineSettingsService.instance.init();
+  await AppearanceSettingsService.instance.init();
   runApp(
     const ProviderScope(
       child: BrowserApp(),

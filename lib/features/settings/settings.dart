@@ -1,4 +1,9 @@
+export 'models/appearance_settings_model.dart';
+export 'screens/clear_browsing_data_screen.dart';
 export 'screens/extensions_screen.dart';
 export 'screens/homepage_settings_screen.dart';
 export 'screens/search_engine_settings_screen.dart';
 export 'screens/settings_screen.dart';
+export 'screens/text_size_settings_screen.dart';
+export 'screens/theme_settings_screen.dart';
+export 'services/appearance_settings_service.dart';

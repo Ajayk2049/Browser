@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import '../../settings/services/appearance_settings_service.dart';
 
 /// Controller for interacting with native Mozilla GeckoView.
 class GeckoBrowserController {
@@ -30,6 +31,10 @@ class GeckoBrowserController {
 
   Future<void> reload() async {
     await _channel?.invokeMethod('reload');
+  }
+
+  Future<void> setFontSizeFactor(double factor) async {
+    await _channel?.invokeMethod('setFontSizeFactor', {'factor': factor});
   }
 }
 
@@ -68,6 +73,14 @@ class GeckoBrowserView extends StatefulWidget {
 
 class _GeckoBrowserViewState extends State<GeckoBrowserView> {
   MethodChannel? _channel;
+
+  @override
+  void initState() {
+    super.initState();
+    AppearanceSettingsService.onFontSizeFactorChanged = (factor) {
+      widget.controller.setFontSizeFactor(factor);
+    };
+  }
 
   void _onPlatformViewCreated(int id) {
     widget.controller._attach(id);
@@ -127,7 +140,10 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
     }
 
     const viewType = 'com.dab/geckoview';
-    final creationParams = {'initialUrl': widget.initialUrl};
+    final creationParams = {
+      'initialUrl': widget.initialUrl,
+      'fontSizeFactor': AppearanceSettingsService.instance.fontSizeFactor,
+    };
 
     return PlatformViewLink(
       viewType: viewType,
