@@ -20,6 +20,7 @@ class BrowserBottomBar extends StatelessWidget {
   final VoidCallback? onNewTab;
   final ValueChanged<BrowserMenuAction>? onMenuAction;
   final VoidCallback? onMenu;
+  final bool isPrivate;
 
   const BrowserBottomBar({
     super.key,
@@ -34,19 +35,19 @@ class BrowserBottomBar extends StatelessWidget {
     this.onNewTab,
     this.onMenuAction,
     this.onMenu,
+    this.isPrivate = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final darkStyle = isDark || isPrivate;
 
-    final barColor = isDark
-        ? const Color(0xFF131620)
-        : colorScheme.surfaceContainerLowest;
-    final borderColor = isDark
-        ? const Color(0xFF1E293B)
-        : colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final barColor = darkStyle ? const Color(0xFF131620) : colorScheme.surfaceContainerLowest;
+    final borderColor = isPrivate
+        ? Colors.white.withValues(alpha: 0.6)
+        : (isDark ? const Color(0xFF1E293B) : colorScheme.outlineVariant.withValues(alpha: 0.5));
 
     return Container(
       decoration: BoxDecoration(
@@ -73,6 +74,7 @@ class BrowserBottomBar extends StatelessWidget {
                   icon: PhosphorIcons.arrowRight,
                   label: 'Forward',
                   enabled: canGoForward,
+                  darkStyle: darkStyle,
                   onTap: canGoForward ? onForward : null,
                 ),
               ),
@@ -82,6 +84,7 @@ class BrowserBottomBar extends StatelessWidget {
                   icon: PhosphorIcons.shareNetwork,
                   label: 'Share',
                   enabled: canShare,
+                  darkStyle: darkStyle,
                   onTap: canShare ? onShare : null,
                 ),
               ),
@@ -91,6 +94,7 @@ class BrowserBottomBar extends StatelessWidget {
                   icon: PhosphorIcons.house,
                   label: 'Home',
                   isSelected: isHome,
+                  darkStyle: darkStyle,
                   onTap: onHome,
                 ),
               ),
@@ -99,6 +103,7 @@ class BrowserBottomBar extends StatelessWidget {
                 child: _BarItem(
                   customIcon: _buildTabChip(colorScheme, isDark),
                   label: 'Tabs',
+                  darkStyle: darkStyle,
                   onTap: onOpenTabs,
                 ),
               ),
@@ -107,6 +112,7 @@ class BrowserBottomBar extends StatelessWidget {
                 child: _BarItem(
                   icon: PhosphorIcons.plus,
                   label: 'New Tab',
+                  darkStyle: darkStyle,
                   onTap: onNewTab,
                 ),
               ),
@@ -115,14 +121,16 @@ class BrowserBottomBar extends StatelessWidget {
                 child: onMenuAction != null
                     ? BrowserMenuPopup(
                         onSelected: onMenuAction!,
-                        child: const _BarItem(
+                        child: _BarItem(
                           icon: PhosphorIcons.list,
                           label: 'Menu',
+                          darkStyle: darkStyle,
                         ),
                       )
                     : _BarItem(
                         icon: PhosphorIcons.list,
                         label: 'Menu',
+                        darkStyle: darkStyle,
                         onTap: onMenu,
                       ),
               ),
@@ -134,23 +142,22 @@ class BrowserBottomBar extends StatelessWidget {
   }
 
   Widget _buildTabChip(ColorScheme colorScheme, bool isDark) {
+    final chipColor = isPrivate ? Colors.white : colorScheme.onSurfaceVariant;
+    final chipBorder = isPrivate ? Colors.white : colorScheme.onSurfaceVariant;
     return Container(
       width: 22,
       height: 22,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: colorScheme.onSurfaceVariant,
-          width: 1.6,
-        ),
+        border: Border.all(color: chipBorder, width: 1.6),
       ),
       child: Text(
         '$tabCount',
         style: AppTypography.bodyXs.copyWith(
           fontSize: 10,
           fontWeight: FontWeight.w700,
-          color: colorScheme.onSurfaceVariant,
+          color: chipColor,
           height: 1,
         ),
       ),
@@ -164,6 +171,7 @@ class _BarItem extends StatelessWidget {
   final String label;
   final bool enabled;
   final bool isSelected;
+  final bool darkStyle;
   final VoidCallback? onTap;
 
   const _BarItem({
@@ -172,17 +180,19 @@ class _BarItem extends StatelessWidget {
     required this.label,
     this.enabled = true,
     this.isSelected = false,
+    this.darkStyle = false,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final baseVariant = darkStyle ? const Color(0xFFCBD5E1) : colorScheme.onSurfaceVariant;
     final itemColor = !enabled
-        ? colorScheme.onSurface.withValues(alpha: 0.3)
+        ? (darkStyle ? Colors.white38 : colorScheme.onSurface.withValues(alpha: 0.3))
         : isSelected
-            ? colorScheme.primary
-            : colorScheme.onSurfaceVariant;
+            ? (darkStyle ? Colors.white : colorScheme.primary)
+            : baseVariant;
 
     final content = Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.x1),

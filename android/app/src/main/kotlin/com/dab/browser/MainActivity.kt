@@ -1,10 +1,14 @@
 package com.dab.browser
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.*
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -19,6 +23,7 @@ class MainActivity : FlutterActivity() {
     private var downloadService: DownloadService? = null
     private var isBound = false
     private var eventSink: EventChannel.EventSink? = null
+    private var downloaderChannel: MethodChannel? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -42,7 +47,8 @@ class MainActivity : FlutterActivity() {
         val intent = Intent(this, DownloadService::class.java)
         startService(intent); bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName).setMethodCallHandler { call, result ->
+        downloaderChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
+        downloaderChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startDownload" -> {
                     val id = call.argument<String>("taskId") ?: ""
@@ -113,14 +119,9 @@ class MainActivity : FlutterActivity() {
                 "getTasks" -> result.success(DownloadService.allTasks.values.map { it.toMap() })
                 "shareUrl" -> {
                     val url = call.argument<String>("url") ?: ""
-                    val title = call.argument<String>("title") ?: ""
                     if (url.isNotEmpty()) {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url)
-                            if (title.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, title)
-                        }
-                        val shareIntent = Intent.createChooser(sendIntent, "Share via").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(shareIntent); result.success(true)
+                        val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }
+                        startActivity(Intent.createChooser(send, "Share via").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(true)
                     } else result.error("INVALID_URL", "URL is empty", null)
                 }
                 "getCacheSize" -> {
@@ -144,6 +145,10 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(true)
                 }
+                "updatePrivateNotification" -> {
+                    updatePrivateNotification(call.argument<Int>("count") ?: 0)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -161,13 +166,32 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         if (isBound) { unbindService(connection); isBound = false }
+        downloaderChannel = null
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        nm?.cancel(9002)
         super.onDestroy()
     }
 
-    private fun getFolderSize(dir: File?): Long {
-        if (dir == null || !dir.exists()) return 0L
-        var total = 0L
-        dir.listFiles()?.forEach { total += if (it.isDirectory) getFolderSize(it) else it.length() }
-        return total
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == "com.dab.browser.CLOSE_PRIVATE_TABS") {
+            downloaderChannel?.invokeMethod("closeAllPrivateTabs", null)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(9002)
+        }
     }
+
+    private fun updatePrivateNotification(count: Int) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) nm.createNotificationChannel(NotificationChannel("dab_private", "Private Browsing", NotificationManager.IMPORTANCE_LOW))
+        if (count > 0) {
+            val pi = PendingIntent.getActivity(this, 9002, Intent(this, MainActivity::class.java).apply { action = "com.dab.browser.CLOSE_PRIVATE_TABS"; flags = Intent.FLAG_ACTIVITY_SINGLE_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val notif = NotificationCompat.Builder(this, "dab_private")
+                .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel).setContentTitle("Close all private tabs")
+                .setContentText("$count open • Touch to close and erase data").setOngoing(true).setContentIntent(pi).build()
+            nm.notify(9002, notif)
+        } else nm.cancel(9002)
+    }
+
+    private fun getFolderSize(d: File?): Long = if (d == null || !d.exists()) 0L else (d.listFiles()?.sumOf { if (it.isDirectory) getFolderSize(it) else it.length() } ?: 0L)
 }

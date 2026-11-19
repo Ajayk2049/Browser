@@ -25,6 +25,7 @@ class GeckoPlatformView(
     private val geckoView = GeckoView(context)
     private val session = GeckoSession(
         GeckoSessionSettings.Builder()
+            .usePrivateMode(creationParams?.get("isPrivate") as? Boolean ?: false)
             .useTrackingProtection(true)
             .build()
     )
@@ -36,6 +37,9 @@ class GeckoPlatformView(
         runtime = GeckoRuntimeProvider.get(context)
         session.open(runtime!!)
         geckoView.setSession(session)
+        android.util.Log.d("NavPerf", "Session opened, activating")
+        android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
+        session.setActive(true)
 
         geckoView.isFocusable = true; geckoView.isFocusableInTouchMode = true
         geckoView.setOnTouchListener { v, _ -> if (!v.hasFocus()) v.requestFocus(); false }
@@ -156,7 +160,19 @@ class GeckoPlatformView(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "loadUrl" -> { session.loadUri(call.argument<String>("url") ?: ""); result.success(true) }
+            "setActive" -> {
+                val active = call.argument<Boolean>("active") ?: true
+                android.util.Log.d("NavPerf", "setActive($active) on session ${System.identityHashCode(session)}")
+                session.setActive(active)
+                result.success(true)
+            }
+            "loadUrl" -> {
+                val url = call.argument<String>("url") ?: ""
+                android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
+                session.setActive(true)
+                session.loadUri(url)
+                result.success(true)
+            }
             "goBack" -> { session.goBack(); result.success(true) }
             "goForward" -> { session.goForward(); result.success(true) }
             "reload" -> { session.reload(); result.success(true) }

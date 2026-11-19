@@ -24,6 +24,7 @@ class BrowserAddressBar extends StatefulWidget {
   final SearchEngine selectedEngine;
   final ValueChanged<SearchEngine>? onEngineChanged;
   final bool isHome;
+  final bool isPrivate;
 
   const BrowserAddressBar({
     super.key,
@@ -39,6 +40,7 @@ class BrowserAddressBar extends StatefulWidget {
     this.selectedEngine = SearchEngine.duckDuckGo,
     this.onEngineChanged,
     this.isHome = false,
+    this.isPrivate = false,
   });
 
   @override
@@ -131,6 +133,11 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final hasFocus = _focusNode.hasFocus;
+    final isPriv = widget.isPrivate;
+    final fgText = isPriv ? Colors.white : colorScheme.onSurface;
+    final fgVariant = isPriv ? const Color(0xFFCBD5E1) : colorScheme.onSurfaceVariant;
+    final borderCol = isPriv ? Colors.white.withValues(alpha: 0.85) : colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final boxBg = isPriv ? const Color(0xFF1E2433) : colorScheme.surfaceContainerHighest;
 
     return CompositedTransformTarget(
       link: _layerLink,
@@ -144,9 +151,9 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                 height: 44,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
+                  color: boxBg,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                  border: Border.all(color: borderCol, width: isPriv ? 1.4 : 1.0),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -154,17 +161,15 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                     SizedBox(
                       width: 36,
                       height: 36,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: widget.onToggleBookmark == null ? null : (widget.isBookmarked ? 'Remove bookmark' : 'Bookmark this page'),
-                        icon: Icon(
-                          widget.isBookmarked ? PhosphorIcons.starFill : PhosphorIcons.star,
-                          size: 20,
-                          color: widget.isBookmarked ? const Color(0xFFEAB308) : (widget.onToggleBookmark == null ? colorScheme.onSurfaceVariant.withValues(alpha: 0.35) : colorScheme.onSurfaceVariant),
-                        ),
-                        onPressed: widget.onToggleBookmark,
-                      ),
+                      child: isPriv
+                          ? const Icon(PhosphorIcons.eyeglasses, size: 20, color: Colors.white)
+                          : IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: widget.onToggleBookmark == null ? null : (widget.isBookmarked ? 'Remove bookmark' : 'Bookmark this page'),
+                              icon: Icon(widget.isBookmarked ? PhosphorIcons.starFill : PhosphorIcons.star, size: 20, color: widget.isBookmarked ? const Color(0xFFEAB308) : (widget.onToggleBookmark == null ? colorScheme.onSurfaceVariant.withValues(alpha: 0.35) : colorScheme.onSurfaceVariant)),
+                              onPressed: widget.onToggleBookmark,
+                            ),
                     ),
                     const SizedBox(width: 4),
                     Tooltip(
@@ -174,7 +179,7 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                          child: Icon(PhosphorIcons.lockSimple, size: 16, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                          child: Icon(PhosphorIcons.lockSimple, size: 16, color: fgVariant),
                         ),
                       ),
                     ),
@@ -191,7 +196,7 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                           _removeOverlay();
                           widget.onSubmitted(val);
                         },
-                        style: AppTypography.bodyMd.copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w600, height: 1.2),
+                        style: AppTypography.bodyMd.copyWith(color: fgText, fontWeight: FontWeight.w600, height: 1.2),
                         decoration: InputDecoration(
                           isDense: true,
                           filled: false,
@@ -199,9 +204,9 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
-                          hintText: hasFocus ? null : (widget.isHome ? 'Welcome to Dab Browser' : 'Search or enter address'),
+                          hintText: hasFocus ? null : (widget.isHome ? (isPriv ? 'Private Browsing' : 'Welcome to Dab Browser') : 'Search or enter address'),
                           hintStyle: AppTypography.bodyMd.copyWith(
-                            color: widget.isHome ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
+                            color: isPriv ? Colors.white.withValues(alpha: 0.7) : (widget.isHome ? colorScheme.onSurface : colorScheme.onSurfaceVariant),
                             fontWeight: widget.isHome ? FontWeight.w600 : FontWeight.w400,
                           ),
                           contentPadding: EdgeInsets.zero,
@@ -216,7 +221,7 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         tooltip: 'Reload',
-                        icon: Icon(PhosphorIcons.arrowClockwise, size: 20, color: colorScheme.onSurfaceVariant),
+                        icon: Icon(PhosphorIcons.arrowClockwise, size: 20, color: fgVariant),
                         onPressed: widget.onReload,
                       ),
                     ),

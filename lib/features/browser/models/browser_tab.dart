@@ -7,12 +7,14 @@ class BrowserTabInfo {
   final String title;
   final String url;
   final bool isActive;
+  final bool isPrivate;
 
   const BrowserTabInfo({
     required this.id,
     required this.title,
     required this.url,
     required this.isActive,
+    this.isPrivate = false,
   });
 
   /// Page title, falling back to the host so a tab is never a blank row.
@@ -21,13 +23,13 @@ class BrowserTabInfo {
     if (trimmed.isNotEmpty) return trimmed;
 
     if (url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty) {
-      return 'Home';
+      return isPrivate ? 'Private Tab' : 'Home';
     }
 
     final host = Uri.tryParse(url)?.host ?? '';
     if (host.isNotEmpty) return host;
 
-    return 'New tab';
+    return isPrivate ? 'New Private Tab' : 'New tab';
   }
 
   String get displayUrl => (url.isEmpty || url == 'Welcome to Dab Browser' || url == 'dab.app/home')
@@ -41,10 +43,12 @@ class BrowserTabSession {
     required this.id,
     required this.controller,
     required this.url,
+    this.isPrivate = false,
   });
 
   final String id;
   final GeckoBrowserController controller;
+  final bool isPrivate;
   String url;
   String title = '';
   bool isLoading = false;
@@ -72,6 +76,7 @@ class BrowserTabSession {
       title: computedTitle,
       url: url,
       isActive: isActive,
+      isPrivate: isPrivate,
     );
   }
 }

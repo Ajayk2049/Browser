@@ -17,6 +17,10 @@ class GeckoBrowserController {
     _channel = null;
   }
 
+  Future<void> setActive(bool active) async {
+    await _channel?.invokeMethod('setActive', {'active': active});
+  }
+
   Future<void> loadUrl(String url) async {
     await _channel?.invokeMethod('loadUrl', {'url': url});
   }
@@ -50,6 +54,7 @@ class GeckoBrowserController {
 class GeckoBrowserView extends StatefulWidget {
   final String initialUrl;
   final GeckoBrowserController controller;
+  final bool isPrivate;
   final ValueChanged<String>? onPageStarted;
   final ValueChanged<bool>? onPageFinished;
   final ValueChanged<int>? onProgressChanged;
@@ -65,6 +70,7 @@ class GeckoBrowserView extends StatefulWidget {
     super.key,
     required this.initialUrl,
     required this.controller,
+    this.isPrivate = false,
     this.onPageStarted,
     this.onPageFinished,
     this.onProgressChanged,
@@ -159,6 +165,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
     final creationParams = {
       'initialUrl': widget.initialUrl,
       'fontSizeFactor': AppearanceSettingsService.instance.fontSizeFactor,
+      'isPrivate': widget.isPrivate,
     };
 
     return PlatformViewLink(

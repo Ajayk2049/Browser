@@ -16,24 +16,21 @@ object GeckoRuntimeProvider {
     }
 
     private fun createRuntime(context: Context): GeckoRuntime {
+        // Fix 7 & What-Not-To-Do: Use DEFAULT anti-tracking to prevent duplicate rule evaluation with uBlock Origin
         val cbSettings = ContentBlocking.Settings.Builder()
-            .antiTracking(
-                ContentBlocking.AntiTracking.DEFAULT or
-                ContentBlocking.AntiTracking.AD or
-                ContentBlocking.AntiTracking.ANALYTIC or
-                ContentBlocking.AntiTracking.SOCIAL or
-                ContentBlocking.AntiTracking.CONTENT
-            )
-            .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
+            .antiTracking(ContentBlocking.AntiTracking.DEFAULT)
+            .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
             .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
             .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
             .build()
 
         val settings = GeckoRuntimeSettings.Builder()
             .contentBlocking(cbSettings)
+            .extensionsProcessEnabled(true)
             .build()
+
+        android.util.Log.i("GeckoPerf", "GeckoRuntime initialized at startup")
 
         return GeckoRuntime.create(context, settings)
     }
 }
-

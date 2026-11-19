@@ -102,18 +102,90 @@ class TabItemTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              IconButton(
-                icon: Icon(PhosphorIcons.xBold, size: 12, color: uCol),
-                style: IconButton.styleFrom(
-                  backgroundColor: cBg,
-                  minimumSize: const Size(28, 28),
-                  fixedSize: const Size(28, 28),
-                  padding: EdgeInsets.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onClose,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: cBg, shape: BoxShape.circle),
+                  child: Icon(PhosphorIcons.xBold, size: 12, color: uCol),
                 ),
-                tooltip: 'Close tab',
-                onPressed: onClose,
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TabSheetSegmentBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final int? count;
+  final bool active;
+  final bool dark;
+  final VoidCallback onTap;
+
+  const TabSheetSegmentBtn(this.label, this.icon, this.count, this.active, this.dark, this.onTap, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = active ? (dark ? const Color(0xFF242C3F) : const Color(0xFFFFFFFF)) : Colors.transparent;
+    final fg = active ? (dark ? const Color(0xFFFFFFFF) : const Color(0xFF0F172A)) : const Color(0xFF94A3B8);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(15)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 6),
+            Text(label, style: AppTypography.bodySm.copyWith(color: fg, fontWeight: active ? FontWeight.w600 : FontWeight.w500, fontSize: 13)),
+            if (count != null) ...[
+              const SizedBox(width: 6),
+              Text('$count', style: AppTypography.bodyXs.copyWith(color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 11)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TabSheetNewTabBtn extends StatelessWidget {
+  final bool dark;
+  final VoidCallback onTap;
+
+  const TabSheetNewTabBtn({super.key, required this.dark, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = dark ? const Color(0xFFEDF0F6) : const Color(0xFF0F172A);
+    final fg = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+
+    return Material(
+      color: bg,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIcons.plusBold, size: 14, color: fg),
+              const SizedBox(width: 6),
+              Text('New Tab', style: AppTypography.bodySm.copyWith(color: fg, fontWeight: FontWeight.w600, fontSize: 13)),
             ],
           ),
         ),

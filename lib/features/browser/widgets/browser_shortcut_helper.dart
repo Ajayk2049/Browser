@@ -75,10 +75,12 @@ class BrowserShortcutHelper {
 
   static Future<void> openTabsSheet(
     BuildContext context, {
-    required List<BrowserTabInfo> tabs,
-    required ValueChanged<String> onSelect,
-    required ValueChanged<String> onClose,
-    required VoidCallback onNewTab,
+    required List<BrowserTabInfo> normalTabs,
+    required List<BrowserTabInfo> privateTabs,
+    int initialSegment = 0,
+    required void Function(String id, bool isPrivate) onSelect,
+    required void Function(String id, bool isPrivate) onClose,
+    required void Function(bool isPrivate) onNewTab,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -86,10 +88,12 @@ class BrowserShortcutHelper {
       backgroundColor: Colors.transparent,
       builder: (sCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) => BrowserTabsSheet(
-          tabs: tabs,
-          onSelect: (id) { onSelect(id); Navigator.of(sCtx).pop(); },
-          onClose: (id) { onClose(id); setSheetState(() {}); },
-          onNewTab: () { onNewTab(); Navigator.of(sCtx).pop(); },
+          normalTabs: normalTabs,
+          privateTabs: privateTabs,
+          initialSegment: initialSegment,
+          onSelect: (id, isPrivate) { onSelect(id, isPrivate); Navigator.of(sCtx).pop(); },
+          onClose: (id, isPrivate) { onClose(id, isPrivate); setSheetState(() {}); },
+          onNewTab: (isPrivate) { onNewTab(isPrivate); Navigator.of(sCtx).pop(); },
         ),
       ),
     );

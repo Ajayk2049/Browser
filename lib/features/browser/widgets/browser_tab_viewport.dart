@@ -33,13 +33,14 @@ class BrowserTabViewport extends StatelessWidget {
       child: GeckoBrowserView(
         initialUrl: tab.url,
         controller: tab.controller,
+        isPrivate: tab.isPrivate,
         onPageStarted: (url) {
           tab..url = url..isLoading = true..error = null;
           if (isActive) onUrlChanged(url);
         },
         onPageFinished: (ok) {
           tab.isLoading = false;
-          if (ok && tab.url.isNotEmpty && !tab.isHome) {
+          if (ok && tab.url.isNotEmpty && !tab.isHome && !tab.isPrivate) {
             HistoryService.instance.recordVisit(url: tab.url, title: tab.title);
           }
           if (isActive) onSync();
@@ -86,4 +87,3 @@ class BrowserTabViewport extends StatelessWidget {
     );
   }
 }
-
