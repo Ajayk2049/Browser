@@ -31,6 +31,7 @@ class DownloadsScreen extends StatefulWidget {
 class _DownloadsScreenState extends State<DownloadsScreen> {
   final DownloadService _service = DownloadService();
   final Map<String, DownloadTask> _tasks = {};
+  final Set<String> _probedTasks = {};
   StreamSubscription<DownloadTask>? _sub;
   bool _isLoading = true;
   bool _isSpeedDialOpen = false;
@@ -45,16 +46,25 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   void _onTaskUpdate(DownloadTask task) {
     if (!mounted) return;
-    setState(() => task.status == DownloadStatus.canceled ? _tasks.remove(task.id) : _tasks[task.id] = task);
+    setState(() {
+      if (task.status == DownloadStatus.canceled) {
+        _tasks.remove(task.id);
+        _probedTasks.remove(task.id);
+      } else {
+        _tasks[task.id] = task;
+      }
+    });
     if (task.status != DownloadStatus.canceled) _ensureTaskMetadata(task);
   }
 
   void _ensureTaskMetadata(DownloadTask task) {
+    if (_probedTasks.contains(task.id)) return;
     final name = (task.destinationPath.isNotEmpty ? task.destinationPath : task.url).split('/').last;
     final needsName = name.startsWith('download_') || name.startsWith('Resolving') || !name.contains('.');
     final needsSize = task.totalBytes <= 0;
     if (!needsName && !needsSize) return;
 
+    _probedTasks.add(task.id);
     UrlMetadataHelper.resolve(task.url).then((meta) {
       if (!mounted) return;
       final current = _tasks[task.id];
@@ -102,21 +112,21 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   Future<void> _handleFromClipboard() async {
     setState(() => _isSpeedDialOpen = false);
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text?.trim() ?? '';
-    final isValid = text.startsWith('http://') || text.startsWith('https://') || text.startsWith('magnet:?');
-    if (text.isEmpty || !isValid) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(
-            content: Text('No valid download link on clipboard'),
-            duration: Duration(seconds: 2),
-          ));
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      final lower = text.toLowerCase();
+      final isValid = lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('magnet:');
+      if (text.isEmpty || !isValid) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(content: Text('No valid download link on clipboard'), duration: Duration(seconds: 2)));
+        }
+        return;
       }
-      return;
-    }
-    if (mounted) unawaited(AddDownloadDialog.show(context, initialUrl: text));
+      if (mounted) unawaited(AddDownloadDialog.show(context, initialUrl: text));
+    } catch (_) {}
   }
 
   Future<void> _showDeleteConfirmDialog(DownloadTask task) async {
@@ -126,23 +136,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   List<DownloadTask> _getFilteredTasks() {
     final list = _tasks.values.toList();
+    bool matchExt(DownloadTask t, List<String> exts) {
+      final l = (t.destinationPath.isNotEmpty ? t.destinationPath : t.url).toLowerCase();
+      return exts.any((e) => l.endsWith(e));
+    }
     switch (_selectedFilter) {
       case DownloadFilter.all: return list;
-      case DownloadFilter.media:
-        return list.where((t) {
-          final l = (t.destinationPath.isNotEmpty ? t.destinationPath : t.url).toLowerCase();
-          return l.endsWith('.mp3') || l.endsWith('.flac') || l.endsWith('.wav') || l.endsWith('.mp4') || l.endsWith('.mkv');
-        }).toList();
-      case DownloadFilter.documents:
-        return list.where((t) {
-          final l = (t.destinationPath.isNotEmpty ? t.destinationPath : t.url).toLowerCase();
-          return l.endsWith('.pdf') || l.endsWith('.doc') || l.endsWith('.docx') || l.endsWith('.txt');
-        }).toList();
-      case DownloadFilter.archives:
-        return list.where((t) {
-          final l = (t.destinationPath.isNotEmpty ? t.destinationPath : t.url).toLowerCase();
-          return l.endsWith('.iso') || l.endsWith('.zip') || l.endsWith('.rar') || l.endsWith('.tar');
-        }).toList();
+      case DownloadFilter.media: return list.where((t) => matchExt(t, ['.mp3', '.flac', '.wav', '.mp4', '.mkv'])).toList();
+      case DownloadFilter.documents: return list.where((t) => matchExt(t, ['.pdf', '.doc', '.docx', '.txt'])).toList();
+      case DownloadFilter.archives: return list.where((t) => matchExt(t, ['.iso', '.zip', '.rar', '.tar'])).toList();
     }
   }
 

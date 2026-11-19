@@ -96,24 +96,21 @@ class DownloadEngine(
 
         val raf = RandomAccessFile(partFile, "rw")
         if (task.totalBytes > 0 && partFile.length() < task.totalBytes) {
-            raf.setLength(task.totalBytes)
+            try { raf.setLength(task.totalBytes) } catch (_: Exception) {}
         }
 
         task.status = DownloadStatus.DOWNLOADING
         onProgressUpdate(task)
 
         val speedTracker = launch { trackSpeed() }
+        val activeJobs = mutableListOf<Job>()
         try {
             supervisorScope {
-                // Connection ladder: start worker 0, then stagger siblings by 750ms if range supported
-                val activeJobs = mutableListOf<Job>()
                 for ((idx, segment) in task.segments.withIndex()) {
                     if (segment.isFinished || isPaused.get() || isCanceled.get()) continue
-                    if (idx > 0) delay(750L) // Ladder connection to avoid sudden socket burst
+                    if (idx > 0) delay(750L)
                     if (isPaused.get() || isCanceled.get()) break
-                    val job = launch {
-                        downloadSegmentWithRetry(segment, raf)
-                    }
+                    val job = launch { downloadSegmentWithRetry(segment, raf) }
                     activeJobs.add(job)
                 }
                 activeJobs.joinAll()
@@ -122,7 +119,7 @@ class DownloadEngine(
             if (!isPaused.get() && !isCanceled.get()) {
                 val allFinished = task.segments.all { it.isFinished } || (task.totalBytes > 0 && task.downloadedBytes >= task.totalBytes)
                 if (allFinished) {
-                    raf.close()
+                    synchronized(rafLock) { try { raf.close() } catch (_: Exception) {} }
                     if (destFile.exists()) destFile.delete()
                     partFile.renameTo(destFile)
                     task.status = DownloadStatus.COMPLETED
@@ -132,7 +129,9 @@ class DownloadEngine(
             }
         } finally {
             speedTracker.cancel()
-            try { raf.close() } catch (_: Exception) {}
+            activeJobs.forEach { it.cancel() }
+            activeJobs.joinAll()
+            synchronized(rafLock) { try { raf.close() } catch (_: Exception) {} }
         }
     }
 
@@ -193,7 +192,6 @@ class DownloadEngine(
                 }
                 segment.downloadedBytes += bytesRead
                 recalculateTotalDownloaded()
-                onProgressUpdate(task)
             }
         } finally {
             try { input.close() } catch (_: Exception) {}
@@ -221,7 +219,7 @@ class DownloadEngine(
     }
 
     private fun recalculateTotalDownloaded() {
-        task.downloadedBytes = task.segments.sumOf { it.downloadedBytes }
+        task.downloadedBytes = synchronized(task.segments) { task.segments.sumOf { it.downloadedBytes } }
     }
 
     private suspend fun trackSpeed() {

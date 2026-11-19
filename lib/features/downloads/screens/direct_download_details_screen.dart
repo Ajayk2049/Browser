@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -5,6 +6,7 @@ import '../models/download_task.dart';
 import '../services/download_service.dart';
 import '../widgets/delete_download_dialog.dart';
 import '../widgets/download_detail_components.dart';
+import '../widgets/speed_limit_dialog.dart';
 
 /// Screen displaying detailed metadata and real-time progress for a direct (HTTP/HTTPS) download.
 /// Adheres to rules.md §13, §29.2 (< 300 lines).
@@ -20,14 +22,21 @@ class DirectDownloadDetailsScreen extends StatefulWidget {
 class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScreen> {
   late DownloadTask _task;
   final DownloadService _service = DownloadService();
+  StreamSubscription<DownloadTask>? _sub;
 
   @override
   void initState() {
     super.initState();
     _task = widget.initialTask;
-    _service.downloadUpdates.listen((updated) {
+    _sub = _service.downloadUpdates.listen((updated) {
       if (mounted && updated.id == _task.id) setState(() => _task = updated);
     });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 
   IconData _getFileIcon(String name) {
@@ -57,6 +66,10 @@ class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScree
     if (deleted == true && mounted) {
       Navigator.of(context).pop(true);
     }
+  }
+
+  void _openSpeedLimitDialog() {
+    SpeedLimitDialog.show(context, taskId: _task.id, currentLimitBytes: _task.speedLimitBytesPerSec);
   }
 
   @override
@@ -174,7 +187,7 @@ class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScree
           const SizedBox(height: 16.0),
           Row(
             children: [
-              DownloadDetailComponents.buildStatBox('SPEED', isDone ? '0 B/s' : _task.speedFormatted, fgColor, subColor, isDark),
+              DownloadDetailComponents.buildStatBox('SPEED', isDone ? '0 B/s' : _task.speedFormatted, fgColor, subColor, isDark, _openSpeedLimitDialog),
               const SizedBox(width: 8.0),
               DownloadDetailComponents.buildStatBox('THREADS', '${_task.segmentsCount}', fgColor, subColor, isDark),
               const SizedBox(width: 8.0),
@@ -187,6 +200,9 @@ class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScree
   }
 
   Widget _buildFileDetailsCard(Color cardBg, Color borderColor, Color fgColor, Color subColor) {
+    final limitStr = _task.speedLimitBytesPerSec > 0
+        ? '${(_task.speedLimitBytesPerSec / (1024 * 1024)).toStringAsFixed(1)} MB/s'
+        : 'Unlimited • Tap to limit';
     return Container(
       decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16.0), border: Border.all(color: borderColor)),
       child: Column(
@@ -194,6 +210,11 @@ class _DirectDownloadDetailsScreenState extends State<DirectDownloadDetailsScree
           DownloadDetailComponents.buildDetailRow('Downloaded', '${_task.downloadedSizeFormatted} of ${_task.fileSizeFormatted}', fgColor, subColor),
           DownloadDetailComponents.buildDivider(borderColor),
           DownloadDetailComponents.buildDetailRow('Saved to', _task.destinationPath.isNotEmpty ? _task.destinationPath : '/storage/emulated/0/Download', fgColor, subColor, isPath: true),
+          DownloadDetailComponents.buildDivider(borderColor),
+          InkWell(
+            onTap: _openSpeedLimitDialog,
+            child: DownloadDetailComponents.buildDetailRow('Speed limit', limitStr, fgColor, subColor),
+          ),
           DownloadDetailComponents.buildDivider(borderColor),
           DownloadDetailComponents.buildDetailRow('Added', _task.dateLabel ?? 'Today', fgColor, subColor),
           DownloadDetailComponents.buildDivider(borderColor),

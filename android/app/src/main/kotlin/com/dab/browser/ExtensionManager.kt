@@ -28,8 +28,7 @@ class ExtensionManager(
         org.mozilla.geckoview.GeckoSession().open(runtime)
 
         ensureGoogleSearchFixer {
-            installUBlockFromAmoIfNeeded()
-            Log.i("ExtDebug", "post-AMO-install state check")
+            Log.i("ExtDebug", "post-startup extension check")
             runtime.webExtensionController.list().accept({ extensions ->
                 extensions?.forEach { ext ->
                     Log.i("ExtDebug", "  ext: id=${ext.id}, name=${ext.metaData.name}, builtIn=${ext.isBuiltIn}, disabledFlags=${ext.metaData.disabledFlags}")
@@ -66,28 +65,6 @@ class ExtensionManager(
             Log.e("ExtDebug", "Google Search Fixer ensureBuiltIn FAILED", error)
             onComplete?.invoke()
         })
-    }
-
-    private fun installUBlockFromAmoIfNeeded() {
-        if (prefs.getBoolean("ublock_amo_install_attempted", false)) {
-            Log.d("ExtDebug", "uBlock AMO install already attempted; skipping")
-            return
-        }
-        runtime.webExtensionController.list().accept({ extensions ->
-            val ublock = extensions?.find { it.id.contains("uBlock", ignoreCase = true) }
-            if (ublock != null) {
-                Log.i("ExtDebug", "uBlock already installed: id=${ublock.id}, enabled=${ublock.metaData.disabledFlags == 0}")
-                prefs.edit().putBoolean("ublock_amo_install_attempted", true).apply()
-                return@accept
-            }
-            Log.i("ExtDebug", "uBlock not installed; installing from AMO")
-            val amoUrl = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
-            runtime.webExtensionController.install(amoUrl).accept({ ext ->
-                Log.i("ExtDebug", "uBlock installed from AMO: id=${ext?.id}")
-                prefs.edit().putBoolean("ublock_amo_install_attempted", true).apply()
-                notifyExtensionsChanged()
-            }, { error -> Log.e("ExtDebug", "uBlock AMO install failed", error) })
-        }, { error -> Log.e("ExtDebug", "list() failed while checking for uBlock", error) })
     }
 
     private fun logExtensionState(trigger: String) {

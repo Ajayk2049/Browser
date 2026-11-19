@@ -21,6 +21,7 @@ import '../widgets/browser_overflow_menu.dart';
 import '../widgets/browser_shortcut_helper.dart';
 import '../widgets/browser_tab_viewport.dart';
 import '../widgets/find_in_page_bar.dart';
+import '../widgets/floating_media_grabber_button.dart';
 import '../widgets/page_security_sheet.dart';
 import '../widgets/private_home_view.dart';
 
@@ -216,7 +217,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab);
   void _sharePage() => BrowserShortcutHelper.sharePage(_activeTab.url, _activeTab.title);
-  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title); void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
+  void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+  void _handleMediaDetected(String u, String t, String typ) {
+    if (_detectedMedia.any((m) => m.url == u)) return;
+    setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,37 +240,43 @@ class _BrowserScreenState extends State<BrowserScreen> {
       child: Scaffold(
         backgroundColor: _isPrivateMode ? const Color(0xFF0C0E14) : colorScheme.surface,
         body: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              BrowserAddressBar(
-                controller: _urlController, onSubmitted: _handleSubmit,
-                isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
-                onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark,
-                onOpenPageInfo: _openPageSecurity,
-                onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); },
-                isLoading: _activeTab.isLoading, detectedMediaCount: _detectedMedia.length,
-                onOpenMediaGrabber: _openMediaGrabber, selectedEngine: _selectedEngine,
-                onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
-                isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
+              Column(
+                children: [
+                  BrowserAddressBar(
+                    controller: _urlController, onSubmitted: _handleSubmit,
+                    isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
+                    onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark,
+                    onOpenPageInfo: _openPageSecurity,
+                    onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); },
+                    isLoading: _activeTab.isLoading, detectedMediaCount: _detectedMedia.length,
+                    onOpenMediaGrabber: _openMediaGrabber, selectedEngine: _selectedEngine,
+                    onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
+                    isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
+                  ),
+                  if (_activeTab.isLoading)
+                    LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
+                  if (_activeTab.error != null)
+                    BrowserErrorBanner(message: _activeTab.error ?? '', onRetry: () { setState(() => _activeTab.error = null); _activeTab.controller.reload(); }),
+                  Expanded(
+                    child: IndexedStack(
+                      index: activeIndex,
+                      children: [for (final tab in _activeTabs) _buildTabView(tab)],
+                    ),
+                  ),
+                  if (_isFindInPageVisible)
+                    FindInPageBar(
+                      currentMatch: _findCurrent, totalMatches: _findTotal,
+                      onQueryChanged: (q) { _findQuery = q; _activeTab.controller.findInPage(q, forward: true); },
+                      onNext: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: true) : null,
+                      onPrevious: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: false) : null,
+                      onClose: () { setState(() => _isFindInPageVisible = false); _activeTab.controller.clearFindInPage(); },
+                    ),
+                ],
               ),
-              if (_activeTab.isLoading)
-                LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
-              if (_activeTab.error != null)
-                BrowserErrorBanner(message: _activeTab.error ?? '', onRetry: () { setState(() => _activeTab.error = null); _activeTab.controller.reload(); }),
-              Expanded(
-                child: IndexedStack(
-                  index: activeIndex,
-                  children: [for (final tab in _activeTabs) _buildTabView(tab)],
-                ),
-              ),
-              if (_isFindInPageVisible)
-                FindInPageBar(
-                  currentMatch: _findCurrent, totalMatches: _findTotal,
-                  onQueryChanged: (q) { _findQuery = q; _activeTab.controller.findInPage(q, forward: true); },
-                  onNext: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: true) : null,
-                  onPrevious: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: false) : null,
-                  onClose: () { setState(() => _isFindInPageVisible = false); _activeTab.controller.clearFindInPage(); },
-                ),
+              if (!_activeTab.isHome)
+                FloatingMediaGrabberButton(count: _detectedMedia.length, onTap: _openMediaGrabber),
             ],
           ),
         ),
@@ -291,7 +303,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return BrowserTabViewport(
       key: ValueKey(tab.id), tab: tab, isActive: tab.id == _activeTabId,
       onUrlChanged: (url) => setState(() { _urlController.text = url; _detectedMedia.clear(); }),
-      onDownloadPrompt: _promptDownload,
+      onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
       onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }),
       onSync: () => setState(() {}),
     );

@@ -3,6 +3,8 @@ import '../features/browser/screens/bookmarks_screen.dart';
 import '../features/browser/screens/browser_screen.dart';
 import '../features/browser/screens/history_screen.dart';
 import '../features/downloads/downloads.dart';
+import '../features/onboarding/screens/onboarding_screen.dart';
+import '../features/onboarding/services/onboarding_service.dart';
 import '../features/settings/screens/clear_browsing_data_screen.dart';
 import '../features/settings/screens/extensions_screen.dart';
 import '../features/settings/screens/homepage_settings_screen.dart';
@@ -14,8 +16,14 @@ import '../features/settings/settings.dart';
 /// App router configuration adhering to rules.md §29.5 and §32.3.
 /// Configured with BrowserScreen as initial route.
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation:
+      OnboardingService.instance.hasCompletedOnboarding ? '/' : '/welcome',
   routes: [
+    GoRoute(
+      path: '/welcome',
+      name: 'welcome',
+      builder: (context, state) => const OnboardingScreen(),
+    ),
     GoRoute(
       path: '/',
       name: 'browser',

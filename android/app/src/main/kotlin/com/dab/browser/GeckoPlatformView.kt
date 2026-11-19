@@ -18,7 +18,11 @@ class GeckoPlatformView(
     companion object {
         private val downloadExtensions = listOf(
             ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".bin", ".iso",
-            ".mp4", ".mkv", ".avi", ".mp3", ".pdf", ".dmg", ".exe", ".torrent"
+            ".pdf", ".dmg", ".exe", ".torrent"
+        )
+        private val mediaExtensions = listOf(
+            ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4a", ".mp3", ".aac",
+            ".wav", ".flac", ".ogg", ".opus", ".m3u8", ".ts"
         )
     }
 
@@ -31,6 +35,7 @@ class GeckoPlatformView(
     )
     private val channel = MethodChannel(messenger, "com.dab/geckoview_$id")
     private var runtime: GeckoRuntime? = null
+    private var currentTitle: String = ""
 
     init {
         channel.setMethodCallHandler(this)
@@ -58,6 +63,19 @@ class GeckoPlatformView(
     private fun isDownloadable(url: String): Boolean {
         val clean = url.substringBefore('?').substringBefore('#')
         return downloadExtensions.any { clean.endsWith(it) } || url.contains(".torrent")
+    }
+
+    private fun isMediaStream(url: String): Boolean {
+        val clean = url.substringBefore('?').substringBefore('#')
+        return mediaExtensions.any { clean.endsWith(it) } ||
+                url.contains("googlevideo.com/videoplayback") ||
+                url.contains("/hls/") || url.contains(".m3u8?")
+    }
+
+    private fun getMediaType(url: String): String {
+        return if (url.contains("audio") || url.endsWith(".mp3") || url.endsWith(".m4a") || url.endsWith(".aac")) "audio"
+        else if (url.contains(".m3u8") || url.contains("/hls/")) "stream"
+        else "video"
     }
 
     private fun invokeFlutter(method: String, arguments: Any?) {
@@ -102,6 +120,9 @@ class GeckoPlatformView(
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
+                if (isMediaStream(lower)) {
+                    invokeFlutter("onMediaDetected", mapOf("url" to uri, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(lower)))
+                }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
@@ -110,6 +131,9 @@ class GeckoPlatformView(
                 if (lower.startsWith("magnet:") || isDownloadable(lower)) {
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return null
+                }
+                if (isMediaStream(lower)) {
+                    invokeFlutter("onMediaDetected", mapOf("url" to uri, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(lower)))
                 }
                 session.loadUri(uri)
                 return null
@@ -145,13 +169,18 @@ class GeckoPlatformView(
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(s: GeckoSession, title: String?) {
-                invokeFlutter("onTitleChange", mapOf("title" to (title ?: "")))
+                currentTitle = title ?: ""
+                invokeFlutter("onTitleChange", mapOf("title" to currentTitle))
             }
 
             override fun onExternalResponse(s: GeckoSession, response: WebResponse) {
                 val url = response.uri
                 try { response.body?.close() } catch (_: Exception) {}
-                invokeFlutter("onDownloadPrompt", mapOf("url" to url))
+                if (isMediaStream(url.lowercase())) {
+                    invokeFlutter("onMediaDetected", mapOf("url" to url, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(url.lowercase())))
+                } else {
+                    invokeFlutter("onDownloadPrompt", mapOf("url" to url))
+                }
             }
         }
     }

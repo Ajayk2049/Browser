@@ -63,6 +63,7 @@ class GeckoBrowserView extends StatefulWidget {
   final ValueChanged<bool>? onCanGoBack;
   final ValueChanged<bool>? onCanGoForward;
   final ValueChanged<String>? onDownloadPrompt;
+  final void Function(String url, String title, String type)? onMediaDetected;
   final void Function(int current, int total)? onFinderResult;
   final void Function(String uri, int code, String category)? onWebResourceError;
 
@@ -79,6 +80,7 @@ class GeckoBrowserView extends StatefulWidget {
     this.onCanGoBack,
     this.onCanGoForward,
     this.onDownloadPrompt,
+    this.onMediaDetected,
     this.onFinderResult,
     this.onWebResourceError,
   });
@@ -131,6 +133,12 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
       case 'onDownloadPrompt':
         final url = args['url'] as String? ?? '';
         if (url.isNotEmpty) widget.onDownloadPrompt?.call(url);
+        break;
+      case 'onMediaDetected':
+        final u = args['url'] as String? ?? '';
+        final t = args['title'] as String? ?? '';
+        final typ = args['type'] as String? ?? 'video';
+        if (u.isNotEmpty) widget.onMediaDetected?.call(u, t, typ);
         break;
       case 'onFinderResult':
         widget.onFinderResult?.call(

@@ -19,22 +19,25 @@ class DownloadDetailComponents {
     );
   }
 
-  static Widget buildStatBox(String caption, String value, Color fgColor, Color subColor, bool isDark) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 8.0),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F121A) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(10.0),
-        ),
-        child: Column(
-          children: [
-            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700, color: fgColor)),
-            const SizedBox(height: 2.0),
-            Text(caption, style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: subColor)),
-          ],
-        ),
+  static Widget buildStatBox(String caption, String value, Color fgColor, Color subColor, bool isDark, [VoidCallback? onTap]) {
+    final box = Container(
+      padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 8.0),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F121A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10.0),
       ),
+      child: Column(
+        children: [
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700, color: fgColor)),
+          const SizedBox(height: 2.0),
+          Text(caption, style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: subColor)),
+        ],
+      ),
+    );
+    return Expanded(
+      child: onTap != null
+          ? InkWell(onTap: onTap, borderRadius: BorderRadius.circular(10.0), child: box)
+          : box,
     );
   }
 

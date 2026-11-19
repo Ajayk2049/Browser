@@ -41,7 +41,12 @@ class UrlMetadataHelper {
     try {
       final dio = DioClient.instance;
       final opt = Options(
-        headers: <String, dynamic>{'Range': 'bytes=0-0', 'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0', 'Accept': '*/*', 'Referer': ?ref},
+        headers: <String, dynamic>{
+          'Range': 'bytes=0-0',
+          'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
+          'Accept': '*/*',
+          if (ref != null && ref.isNotEmpty) 'Referer': ref,
+        },
         followRedirects: true, maxRedirects: 8, responseType: ResponseType.stream, validateStatus: (s) => s != null && s < 500,
       );
 
@@ -75,9 +80,14 @@ class UrlMetadataHelper {
     } catch (e) {
       if (Env.enableLogging) developer.log('Probe exception: $e', name: 'Probe');
       final raw = uri?.pathSegments.lastOrNull;
-      final name = (raw?.isNotEmpty == true) ? _cleanFileName(Uri.decodeComponent(raw!)) : 'download_${DateTime.now().millisecondsSinceEpoch}';
+      final name = (raw?.isNotEmpty == true) ? _cleanFileName(_safeDecode(raw)) : 'download_${DateTime.now().millisecondsSinceEpoch}';
       return UrlMetadata(fileName: name, fileExtension: _extractExtension(name), totalBytes: -1, supportsResume: true, finalUrl: trimmed);
     }
+  }
+
+  static String _safeDecode(String? s) {
+    if (s == null || s.isEmpty) return '';
+    try { return Uri.decodeComponent(s); } catch (_) { return s; }
   }
 
   static String? _parseContentDisposition(String? header) {
@@ -90,43 +100,49 @@ class UrlMetadataHelper {
 
   static String _decodeDisp(String? raw) {
     final s = (raw ?? '').trim().replaceAll('"', '');
-    try { return Uri.decodeComponent(s); } catch (_) { return s; }
+    return _safeDecode(s);
   }
 
   static String? _parseQueryParams(Uri uri) {
-    final q = uri.queryParameters;
-    final cand = q['filename'] ?? q['file'] ?? q['name'] ?? q['title'] ?? q['dn'];
-    return (cand?.isNotEmpty == true) ? Uri.decodeComponent(cand!.replaceAll('+', ' ')) : null;
+    try {
+      final q = uri.queryParameters;
+      final cand = q['filename'] ?? q['file'] ?? q['name'] ?? q['title'] ?? q['dn'];
+      return (cand?.isNotEmpty == true) ? _safeDecode(cand!.replaceAll('+', ' ')) : null;
+    } catch (_) { return null; }
   }
 
   static String? _parsePathSegment(Uri uri) {
-    final seg = uri.pathSegments.lastOrNull;
-    if (seg?.isNotEmpty == true) {
-      final dec = Uri.decodeComponent(seg!);
-      if (dec.contains('.')) return dec;
-    }
+    try {
+      final seg = uri.pathSegments.lastOrNull;
+      if (seg?.isNotEmpty == true) {
+        final dec = _safeDecode(seg!);
+        if (dec.contains('.')) return dec;
+      }
+    } catch (_) {}
     return null;
   }
 
   static String extractExtension(String name) => _extractExtension(name);
 
   static String extractCandidateName(String url) {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
-    if (trimmed.toLowerCase().startsWith('magnet:')) {
-      final m = RegExp(r'[?&]dn=([^&]+)', caseSensitive: false).firstMatch(trimmed);
-      if (m != null) {
-        try { return _cleanFileName(Uri.decodeQueryComponent(m.group(1)!)); } catch (_) { return _cleanFileName(m.group(1)!); }
+    try {
+      final trimmed = url.trim();
+      if (trimmed.isEmpty) return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
+      if (trimmed.toLowerCase().startsWith('magnet:')) {
+        final m = RegExp(r'[?&]dn=([^&]+)', caseSensitive: false).firstMatch(trimmed);
+        if (m != null) {
+          try { return _cleanFileName(Uri.decodeQueryComponent(m.group(1)!)); } catch (_) { return _cleanFileName(m.group(1)!); }
+        }
+        return 'Torrent_${DateTime.now().millisecondsSinceEpoch}';
       }
-      return 'Torrent_${DateTime.now().millisecondsSinceEpoch}';
-    }
-    final uri = Uri.tryParse(trimmed);
-    if (uri != null) {
-      final cand = _parseQueryParams(uri) ?? _parsePathSegment(uri);
-      if (cand != null && cand.isNotEmpty) return _cleanFileName(cand);
-      final lastSeg = uri.pathSegments.lastWhere((s) => s.isNotEmpty, orElse: () => '');
-      if (lastSeg.isNotEmpty) return _cleanFileName(Uri.decodeComponent(lastSeg));
-    }
+      final uri = Uri.tryParse(trimmed);
+      if (uri != null) {
+        final cand = _parseQueryParams(uri) ?? _parsePathSegment(uri);
+        if (cand != null && cand.isNotEmpty) return _cleanFileName(cand);
+        final lastSeg = uri.pathSegments.lastWhere((s) => s.isNotEmpty, orElse: () => '');
+        if (lastSeg.isNotEmpty) return _cleanFileName(_safeDecode(lastSeg));
+      }
+    } catch (_) {}
     return 'download_${DateTime.now().millisecondsSinceEpoch}.bin';
   }
 

@@ -29,6 +29,16 @@ class WebExtensionService extends ChangeNotifier {
   /// Curated marketplace list (pre-installed are handled separately and listed under installed)
   static const List<WebExtensionItem> curatedMarketplace = [
     WebExtensionItem(
+      id: 'uBlock0@raymondhill.net',
+      name: 'uBlock Origin',
+      version: '1.61.2',
+      description: 'An efficient wide-spectrum content blocker. Easy on CPU and memory.',
+      category: 'Security & Privacy',
+      rating: 4.8,
+      reviewsCount: '100k+',
+      downloadUrl: 'https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi',
+    ),
+    WebExtensionItem(
       id: 'jid1-MnnxcxisBPnSXQ@jetpack',
       name: 'Privacy Badger',
       version: '2024.2.6',

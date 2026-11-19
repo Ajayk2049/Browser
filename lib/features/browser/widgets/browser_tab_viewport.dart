@@ -13,6 +13,7 @@ class BrowserTabViewport extends StatelessWidget {
   final bool isActive;
   final ValueChanged<String> onUrlChanged;
   final ValueChanged<String> onDownloadPrompt;
+  final void Function(String url, String title, String type)? onMediaDetected;
   final void Function(int current, int total)? onFinderResult;
   final VoidCallback onSync;
 
@@ -22,6 +23,7 @@ class BrowserTabViewport extends StatelessWidget {
     required this.isActive,
     required this.onUrlChanged,
     required this.onDownloadPrompt,
+    this.onMediaDetected,
     this.onFinderResult,
     required this.onSync,
   });
@@ -67,6 +69,9 @@ class BrowserTabViewport extends StatelessWidget {
         },
         onDownloadPrompt: (url) {
           if (isActive) onDownloadPrompt(url);
+        },
+        onMediaDetected: (url, title, type) {
+          if (isActive) onMediaDetected?.call(url, title, type);
         },
         onFinderResult: (cur, tot) {
           if (isActive) onFinderResult?.call(cur, tot);

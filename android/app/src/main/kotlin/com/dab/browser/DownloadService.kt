@@ -22,12 +22,14 @@ class DownloadService : Service() {
         val activeTorrentEngines = ConcurrentHashMap<String, TorrentEngine>()
         val taskQueue = ConcurrentLinkedQueue<String>()
         val lastEmitTimes = ConcurrentHashMap<String, Long>()
+        val lastDbSaveTimes = ConcurrentHashMap<String, Long>()
         const val THROTTLE_INTERVAL_MS = 250L // 4 Hz
+        const val DB_SAVE_INTERVAL_MS = 5000L // 5s SQLite flush during active transfer
         var onProgressCallback: ((DownloadTask) -> Unit)? = null
         @Volatile var maxConcurrentDownloads = 3
         @Volatile var globalSpeedLimitBytesPerSec = 0L
 
-        fun dispatchProgress(task: DownloadTask, isStateChange: Boolean = false, onUpdateNotification: ((DownloadTask) -> Unit)? = null) {
+        fun dispatchProgress(task: DownloadTask, isStateChange: Boolean = false, db: DownloadDatabase? = null, onUpdateNotification: ((DownloadTask) -> Unit)? = null) {
             val now = System.currentTimeMillis()
             val lastTime = lastEmitTimes[task.id] ?: 0L
             val isCritical = isStateChange || task.status in listOf(
@@ -35,6 +37,13 @@ class DownloadService : Service() {
             )
             if (isCritical || (now - lastTime) >= THROTTLE_INTERVAL_MS) {
                 lastEmitTimes[task.id] = now; onUpdateNotification?.invoke(task); onProgressCallback?.invoke(task)
+            }
+            if (db != null) {
+                val lastDb = lastDbSaveTimes[task.id] ?: 0L
+                if (isCritical || (now - lastDb) >= DB_SAVE_INTERVAL_MS) {
+                    lastDbSaveTimes[task.id] = now
+                    db.upsertTask(task)
+                }
             }
         }
     }
@@ -111,8 +120,7 @@ class DownloadService : Service() {
         if (task.isTorrent) {
             val tEngine = activeTorrentEngines.getOrPut(task.id) {
                 TorrentEngine(task) { updated ->
-                    db.upsertTask(updated)
-                    dispatchProgress(updated) { updateNotification(it) }
+                    dispatchProgress(updated, db = db) { updateNotification(it) }
                     if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) {
                         processQueue(); checkAutoStop()
                     }
@@ -123,8 +131,7 @@ class DownloadService : Service() {
         }
         val engine = activeEngines.getOrPut(task.id) {
             DownloadEngine(task, onSaveSegments = { segs -> db.saveSegments(task.id, segs) }) { updated ->
-                db.upsertTask(updated)
-                dispatchProgress(updated) { updateNotification(it) }
+                dispatchProgress(updated, db = db) { updateNotification(it) }
                 if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) {
                     db.saveSegments(updated.id, updated.segments)
                     processQueue(); checkAutoStop()
@@ -174,6 +181,8 @@ class DownloadService : Service() {
 
     fun deleteDownload(taskId: String, deleteFile: Boolean = false) {
         taskQueue.remove(taskId)
+        lastEmitTimes.remove(taskId)
+        lastDbSaveTimes.remove(taskId)
         val task = allTasks.remove(taskId)
         activeEngines.remove(taskId)?.cancel()
         activeTorrentEngines.remove(taskId)?.cancel()
