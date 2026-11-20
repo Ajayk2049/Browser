@@ -1,7 +1,6 @@
 package com.dab.browser
 
 import org.libtorrent4j.SessionManager
-import org.libtorrent4j.SessionParams
 
 /**
  * Shared singleton manager for libtorrent4j session.
@@ -14,9 +13,7 @@ object TorrentSessionManager {
     @Synchronized
     fun ensureStarted() {
         if (!isStarted) {
-            val params = SessionParams()
-            params.settings.enableDht(true)
-            session.start(params)
+            session.start()
             isStarted = true
         }
     }
@@ -24,7 +21,7 @@ object TorrentSessionManager {
     @Synchronized
     fun stop() {
         if (isStarted) {
-            session.stop()
+            try { session.stop() } catch (_: Exception) {}
             isStarted = false
         }
     }

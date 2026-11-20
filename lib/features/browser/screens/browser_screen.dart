@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import '../../../theme/tokens/app_radius.dart';
 import '../../downloads/downloads.dart';
 import '../../settings/services/homepage_settings_service.dart';
 import '../../settings/services/search_engine_settings_service.dart';
 import '../models/browser_tab.dart';
-import '../models/home_content_item.dart';
 import '../models/search_engine.dart';
 import '../services/bookmarks_service.dart';
 import '../services/quick_links_service.dart';
@@ -57,8 +55,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _activeTabId = _createTab().id;
     _initAndRestoreSession();
     BookmarksService.instance..init()..addListener(_syncData);
-    QuickLinksService.instance..init()..addListener(_syncData);
-    SitePermissionsService.instance.init();
+    QuickLinksService.instance..init()..addListener(_syncData); SitePermissionsService.instance.init();
     _channel.setMethodCallHandler((call) async { if (call.method == 'closeAllPrivateTabs') _closeAllPrivateTabs(); });
   }
 
@@ -75,6 +72,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         _activeTab.url = hs.customHomepageUrl; _urlController.text = hs.customHomepageUrl;
         _activeTab.controller.loadUrl(hs.customHomepageUrl);
       }
+      _activeTab.isLoaded = true;
     });
   }
 
@@ -104,7 +102,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (UrlHelper.isDownloadable(resolvedUrl)) { _promptDownload(resolvedUrl); return; }
     if (Uri.tryParse(resolvedUrl) == null) return;
     _activeTab.controller.loadUrl(resolvedUrl);
-    setState(() { _activeTab..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
+    setState(() { _activeTab..isLoaded = true..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
     if (!_isPrivateMode) _persistTabs();
   }
 
@@ -124,6 +122,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       if (isPrivate != null) _isPrivateMode = isPrivate;
       _activeTabId = id;
+      _activeTab.isLoaded = true;
       _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
       _detectedMedia.clear();
     });
@@ -199,20 +198,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _openHistory() async { final u = await context.push<String>('/history'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
 
   void _handleMenuAction(BrowserMenuAction action) {
-    switch (action) {
-      case BrowserMenuAction.findInPage:
-        if (_activeTab.isHome) {
-          ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(
-            content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2),
-          ));
-        } else {
-          setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
-        }
-      case BrowserMenuAction.settings: context.push('/settings');
-      case BrowserMenuAction.downloadManager: context.push('/downloads');
-      case BrowserMenuAction.bookmarks: _openBookmarks();
-      case BrowserMenuAction.history: _openHistory();
-    }
+    if (action == BrowserMenuAction.findInPage) {
+      if (_activeTab.isHome) {
+        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
+      } else { setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; }); }
+    } else if (action == BrowserMenuAction.settings) { context.push('/settings');
+    } else if (action == BrowserMenuAction.downloadManager) { context.push('/downloads');
+    } else if (action == BrowserMenuAction.bookmarks) { _openBookmarks();
+    } else if (action == BrowserMenuAction.history) { _openHistory(); }
   }
 
   void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab);
@@ -247,8 +240,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   BrowserAddressBar(
                     controller: _urlController, onSubmitted: _handleSubmit,
                     isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
-                    onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark,
-                    onOpenPageInfo: _openPageSecurity,
+                    onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark, onOpenPageInfo: _openPageSecurity,
                     onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); },
                     isLoading: _activeTab.isLoading, detectedMediaCount: _detectedMedia.length,
                     onOpenMediaGrabber: _openMediaGrabber, selectedEngine: _selectedEngine,
@@ -259,12 +251,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
                   if (_activeTab.error != null)
                     BrowserErrorBanner(message: _activeTab.error ?? '', onRetry: () { setState(() => _activeTab.error = null); _activeTab.controller.reload(); }),
-                  Expanded(
-                    child: IndexedStack(
-                      index: activeIndex,
-                      children: [for (final tab in _activeTabs) _buildTabView(tab)],
-                    ),
-                  ),
+                  Expanded(child: IndexedStack(index: activeIndex, children: [for (final tab in _activeTabs) _buildTabView(tab)])),
                   if (_isFindInPageVisible)
                     FindInPageBar(
                       currentMatch: _findCurrent, totalMatches: _findTotal,
@@ -275,8 +262,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     ),
                 ],
               ),
-              if (!_activeTab.isHome)
-                FloatingMediaGrabberButton(count: _detectedMedia.length, onTap: _openMediaGrabber),
+              if (!_activeTab.isHome) FloatingMediaGrabberButton(count: _detectedMedia.length, onTap: _openMediaGrabber),
             ],
           ),
         ),
@@ -300,8 +286,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
         quickLinks: QuickLinksService.instance.quickLinks, bookmarks: BookmarksService.instance.bookmarks,
       );
     }
+    final isActive = tab.id == _activeTabId;
+    if (isActive) tab.isLoaded = true;
+    if (!tab.isLoaded) return const SizedBox.shrink();
     return BrowserTabViewport(
-      key: ValueKey(tab.id), tab: tab, isActive: tab.id == _activeTabId,
+      key: ValueKey(tab.id), tab: tab, isActive: isActive,
       onUrlChanged: (url) => setState(() { _urlController.text = url; _detectedMedia.clear(); }),
       onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
       onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }),

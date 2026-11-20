@@ -18,24 +18,25 @@ class ExtensionManager(
 ) : MethodChannel.MethodCallHandler {
 
     private val channel = MethodChannel(messenger, "com.dab/extensions")
-    private val runtime: GeckoRuntime = GeckoRuntimeProvider.get(context)
+    private val runtime: GeckoRuntime get() = GeckoRuntimeProvider.get(context)
     private val controller: WebExtensionController get() = runtime.webExtensionController
     private val prefs: SharedPreferences = context.getSharedPreferences("ext_prefs", Context.MODE_PRIVATE)
 
     init {
         channel.setMethodCallHandler(this)
         setupPromptDelegate()
-        org.mozilla.geckoview.GeckoSession().open(runtime)
 
-        ensureGoogleSearchFixer {
-            Log.i("ExtDebug", "post-startup extension check")
-            runtime.webExtensionController.list().accept({ extensions ->
-                extensions?.forEach { ext ->
-                    Log.i("ExtDebug", "  ext: id=${ext.id}, name=${ext.metaData.name}, builtIn=${ext.isBuiltIn}, disabledFlags=${ext.metaData.disabledFlags}")
-                }
-            }, { error -> Log.e("ExtDebug", "post-install list failed", error) })
-            logExtensionState("startup")
-        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            ensureGoogleSearchFixer {
+                Log.i("ExtDebug", "post-startup extension check")
+                runtime.webExtensionController.list().accept({ extensions ->
+                    extensions?.forEach { ext ->
+                        Log.i("ExtDebug", "  ext: id=${ext.id}, name=${ext.metaData.name}, builtIn=${ext.isBuiltIn}, disabledFlags=${ext.metaData.disabledFlags}")
+                    }
+                }, { error -> Log.e("ExtDebug", "post-install list failed", error) })
+                logExtensionState("startup")
+            }
+        }, 1500)
     }
 
     private fun runOnUiThread(block: () -> Unit) = Handler(Looper.getMainLooper()).post(block)

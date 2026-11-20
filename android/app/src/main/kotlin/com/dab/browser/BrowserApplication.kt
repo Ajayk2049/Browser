@@ -2,13 +2,21 @@ package com.dab.browser
 
 import android.app.Application
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 
 class BrowserApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         if (isMainProcess()) {
-            android.util.Log.i("GeckoPerf", "Main process detected ($packageName): initializing GeckoRuntime")
-            GeckoRuntimeProvider.get(this)
+            android.util.Log.i("GeckoPerf", "Main process detected ($packageName): deferring GeckoRuntime warm-up to unblock cold start")
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    GeckoRuntimeProvider.get(this)
+                } catch (e: Exception) {
+                    android.util.Log.e("GeckoPerf", "Deferred GeckoRuntime init error", e)
+                }
+            }, 300)
         } else {
             android.util.Log.i("GeckoPerf", "Child process detected ($packageName): skipping GeckoRuntime init")
         }

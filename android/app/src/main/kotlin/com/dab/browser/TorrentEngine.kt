@@ -5,6 +5,7 @@ import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.TorrentStatus
+import org.libtorrent4j.swig.torrent_flags_t
 import java.io.File
 import java.net.URLDecoder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -74,7 +75,7 @@ class TorrentEngine(
         task.speedLimitBytesPerSec = bytesPerSec
         val h = handle
         if (h != null && h.isValid) {
-            try { h.downloadLimit(if (bytesPerSec > 0) bytesPerSec.toInt() else 0) } catch (_: Exception) {}
+            try { h.setDownloadLimit(if (bytesPerSec > 0) bytesPerSec.toInt() else 0) } catch (_: Exception) {}
         }
     }
 
@@ -87,24 +88,23 @@ class TorrentEngine(
         saveDir.mkdirs()
 
         val magnet = parseMagnet(task.url)
-        val infoHashStr = magnet.infoHash
-        val sha1 = if (infoHashStr.isNotEmpty() && infoHashStr.length == 40) {
-            try { Sha1Hash.parseHex(infoHashStr) } catch (_: Exception) { null }
+        val sha1: Sha1Hash? = if (magnet.infoHash.length == 40) {
+            try { Sha1Hash.parseHex(magnet.infoHash) } catch (_: Exception) { null }
         } else null
 
         var th = if (sha1 != null) session.find(sha1) else null
         if (th == null || !th.isValid) {
             if (task.url.startsWith("magnet:", true)) {
-                session.download(task.url, saveDir)
+                session.download(task.url, saveDir, torrent_flags_t())
             } else if (task.url.endsWith(".torrent", true)) {
                 val tFile = File(task.url)
                 if (tFile.exists()) {
                     session.download(TorrentInfo(tFile), saveDir)
                 } else {
-                    session.download(task.url, saveDir)
+                    session.download(task.url, saveDir, torrent_flags_t())
                 }
             } else {
-                session.download(task.url, saveDir)
+                session.download(task.url, saveDir, torrent_flags_t())
             }
 
             for (i in 0 until 60) {
@@ -115,16 +115,10 @@ class TorrentEngine(
             }
         }
 
-        if (th == null || !th.isValid) {
-            // Find by matching any newly added torrents
-            val torrents = session.torrents()
-            th = torrents.lastOrNull { it.isValid }
-        }
-
         if (th == null || !th.isValid) throw Exception("Failed to start torrent session for magnet")
         handle = th
         if (task.speedLimitBytesPerSec > 0) {
-            try { th.downloadLimit(task.speedLimitBytesPerSec.toInt()) } catch (_: Exception) {}
+            try { th.setDownloadLimit(task.speedLimitBytesPerSec.toInt()) } catch (_: Exception) {}
         }
         th.resume()
 

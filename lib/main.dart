@@ -13,13 +13,15 @@ import 'features/settings/services/search_engine_settings_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   DownloadService(); // Initialize download channel listener & logger
-  await BookmarksService.instance.init();
-  await QuickLinksService.instance.init();
-  await HistoryService.instance.init();
-  await HomepageSettingsService.instance.init();
-  await SearchEngineSettingsService.instance.init();
-  await AppearanceSettingsService.instance.init();
-  await OnboardingService.instance.init();
+  await Future.wait([
+    BookmarksService.instance.init(),
+    QuickLinksService.instance.init(),
+    HistoryService.instance.init(),
+    HomepageSettingsService.instance.init(),
+    SearchEngineSettingsService.instance.init(),
+    AppearanceSettingsService.instance.init(),
+    OnboardingService.instance.init(),
+  ]);
   runApp(
     const ProviderScope(
       child: BrowserApp(),

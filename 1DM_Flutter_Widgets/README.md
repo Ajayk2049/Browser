@@ -11,6 +11,8 @@ Ready-to-use Flutter UI widgets and core controller replicating the 1DM+ downloa
    - Bottom sheet component for link & media sniffing. Filters video, audio, images, documents, and includes direct download triggers.
 4. `download_engine_controller.dart`
    - State controller (`ChangeNotifier`) that splits large HTTP downloads into range chunks, downloads segments in parallel, writes directly to file offsets, and streams live speed statistics.
+5. `torrent_inspector_sheet.dart`
+   - BitTorrent inspector bottom sheet for examining torrent metadata, per-file download priorities (Normal/High/Ignore), sequential streaming mode, swarm seeders/leechers, piece length, info hash, and announce trackers.
 
 ## How to use in your Flutter app
 

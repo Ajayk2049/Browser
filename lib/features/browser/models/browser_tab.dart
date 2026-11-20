@@ -57,6 +57,7 @@ class BrowserTabSession {
   bool canGoBack = false;
   bool canGoForward = false;
   bool isBookmarked = false;
+  bool isLoaded = false;
 
   bool get isHome => url == 'Welcome to Dab Browser' || url == 'dab.app/home' || url.isEmpty;
 
