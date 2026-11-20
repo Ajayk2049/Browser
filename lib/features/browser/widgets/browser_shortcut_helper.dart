@@ -44,7 +44,8 @@ class BrowserShortcutHelper {
   static Future<void> openMediaGrabber(BuildContext context, List<DetectedMedia> items) {
     return showModalBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.modal))),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => MediaGrabberSheet(items: items),
     );
   }

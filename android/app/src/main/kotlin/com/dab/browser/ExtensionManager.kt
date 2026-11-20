@@ -27,15 +27,7 @@ class ExtensionManager(
         setupPromptDelegate()
 
         Handler(Looper.getMainLooper()).postDelayed({
-            ensureGoogleSearchFixer {
-                Log.i("ExtDebug", "post-startup extension check")
-                runtime.webExtensionController.list().accept({ extensions ->
-                    extensions?.forEach { ext ->
-                        Log.i("ExtDebug", "  ext: id=${ext.id}, name=${ext.metaData.name}, builtIn=${ext.isBuiltIn}, disabledFlags=${ext.metaData.disabledFlags}")
-                    }
-                }, { error -> Log.e("ExtDebug", "post-install list failed", error) })
-                logExtensionState("startup")
-            }
+            ensureGoogleSearchFixer()
         }, 1500)
     }
 
@@ -59,27 +51,14 @@ class ExtensionManager(
     private fun ensureGoogleSearchFixer(onComplete: (() -> Unit)? = null) {
         val gsfId = "{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}"
         runtime.webExtensionController.ensureBuiltIn("resource://android/assets/extensions/google_search_fixer/", gsfId).accept({ ext ->
-            Log.i("ExtDebug", "Google Search Fixer ensured: id=${ext?.id}, builtIn=${ext?.isBuiltIn}, disabledFlags=${ext?.metaData?.disabledFlags}")
-            notifyExtensionsChanged()
-            onComplete?.invoke()
-        }, { error ->
-            Log.e("ExtDebug", "Google Search Fixer ensureBuiltIn FAILED", error)
-            onComplete?.invoke()
-        })
+            notifyExtensionsChanged(); onComplete?.invoke()
+        }, { onComplete?.invoke() })
     }
 
     private fun logExtensionState(trigger: String) {
-        runtime.webExtensionController.list().accept({ extensions ->
-            Log.i("ExtDebug", "=== Extension state dump (trigger=$trigger) ===")
-            if (extensions.isNullOrEmpty()) Log.w("ExtDebug", "  (no extensions installed)")
-            extensions?.forEach { ext ->
-                Log.i("ExtDebug", "  id=${ext.id} name=${ext.metaData.name} version=${ext.metaData.version} builtIn=${ext.isBuiltIn} disabledFlags=${ext.metaData.disabledFlags}")
-                if (ext.id.contains("uBlock", ignoreCase = true)) {
-                    Log.i("ExtDebug", "uBlock optionsPageUrl=${ext.metaData.optionsPageUrl}")
-                }
-            }
-            Log.i("ExtDebug", "=== End dump ===")
-        }, { error -> Log.e("ExtDebug", "State dump failed (trigger=$trigger)", error) })
+        runtime.webExtensionController.list().accept({ list ->
+            Log.i("ExtDebug", "Extensions ($trigger): ${list?.map { it.id }}")
+        }, {})
     }
 
     private fun setupPromptDelegate() {

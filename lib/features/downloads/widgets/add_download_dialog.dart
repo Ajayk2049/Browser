@@ -14,10 +14,11 @@ import '../utils/url_metadata_helper.dart';
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
   final String? initialUrl;
-  const AddDownloadDialog({super.key, this.initialUrl});
+  final String? suggestedFileName;
+  const AddDownloadDialog({super.key, this.initialUrl, this.suggestedFileName});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? suggestedFileName}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, suggestedFileName: suggestedFileName));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -43,8 +44,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final uri = Uri.tryParse(url);
     _refCtrl = TextEditingController(text: uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : '');
     final isMag = url.toLowerCase().startsWith('magnet:');
-    String cand = '';
-    try { if (url.isNotEmpty) cand = UrlMetadataHelper.extractCandidateName(url); } catch (_) {}
+    String cand = widget.suggestedFileName ?? '';
+    if (cand.isEmpty && url.isNotEmpty) {
+      try { cand = UrlMetadataHelper.extractCandidateName(url); } catch (_) {}
+    }
     _nameCtrl = TextEditingController(text: cand);
     try {
       _ext = cand.isNotEmpty ? (isMag && !cand.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(cand)) : (isMag ? 'torrent' : 'bin');

@@ -8,8 +8,8 @@ import '../models/browser_tab.dart';
 import '../models/search_engine.dart';
 import '../services/bookmarks_service.dart';
 import '../services/quick_links_service.dart';
-import '../services/site_permissions_service.dart';
 import '../services/tab_persistence_service.dart';
+import '../services/youtube_grabber_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/browser_address_bar.dart';
 import '../widgets/browser_bottom_bar.dart';
@@ -101,7 +101,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (UrlHelper.isDownloadable(resolvedUrl)) { _promptDownload(resolvedUrl); return; }
     if (Uri.tryParse(resolvedUrl) == null) return;
     _activeTab.controller.loadUrl(resolvedUrl);
-    setState(() { _activeTab..isLoaded = true..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; });
+    setState(() { _activeTab..isLoaded = true..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; _detectedMedia.clear(); });
+    _checkYouTube(resolvedUrl);
     if (!_isPrivateMode) _persistTabs();
   }
 
@@ -127,7 +128,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
     if (oldTab.id != _activeTab.id) {
       if (!oldTab.isHome) oldTab.controller.setActive(false);
-      if (!_activeTab.isHome) _activeTab.controller.setActive(true);
+      if (!_activeTab.isHome) { _activeTab.controller.setActive(true); _checkYouTube(_activeTab.url); }
     }
   }
 
@@ -160,9 +161,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _isPrivateMode = false;
           if (_normalTabs.isEmpty) _createTab();
           _activeTabId = _normalTabs.last.id;
-        } else {
-          _activeTabId = _createTab().id;
-        }
+        } else { _activeTabId = _createTab().id; }
       } else if (_activeTabId == id) {
         _activeTabId = pool[idx < pool.length ? idx : pool.length - 1].id;
       }
@@ -178,8 +177,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_isPrivateMode) {
       _isPrivateMode = false;
       if (_normalTabs.isEmpty) _createTab();
-      _activeTabId = _normalTabs.last.id;
-      _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
+      _activeTabId = _normalTabs.last.id; _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
     }
   });
 
@@ -212,8 +210,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
   void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
   void _handleMediaDetected(String u, String t, String typ) {
-    if (_detectedMedia.any((m) => m.url == u)) return;
-    setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
+    if (!_detectedMedia.any((m) => m.url == u)) setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
+  }
+  void _onUrlUpdated(String u) { setState(() { _urlController.text = u; _detectedMedia.clear(); }); _checkYouTube(u); }
+  Future<void> _checkYouTube(String u) async {
+    if (!YoutubeGrabberService.isYouTubeUrl(u)) return;
+    final list = await YoutubeGrabberService.instance.extractStreams(u);
+    if (mounted && _activeTab.url == u && list.isNotEmpty) setState(() { for (final i in list) if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i); });
   }
 
   @override
@@ -288,11 +291,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (isActive) tab.isLoaded = true;
     if (!tab.isLoaded) return const SizedBox.shrink();
     return BrowserTabViewport(
-      key: ValueKey(tab.id), tab: tab, isActive: isActive,
-      onUrlChanged: (url) => setState(() { _urlController.text = url; _detectedMedia.clear(); }),
+      key: ValueKey(tab.id), tab: tab, isActive: isActive, onUrlChanged: _onUrlUpdated,
       onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
-      onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }),
-      onSync: () => setState(() {}),
+      onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }), onSync: () => setState(() {}),
     );
   }
 }

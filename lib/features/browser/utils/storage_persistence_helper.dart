@@ -50,16 +50,17 @@ class StoragePersistenceHelper {
         if (content.trim().isNotEmpty) return content;
       }
 
-      // Fallback to external backup file
-      final external = await getExternalBackupFile(fileName);
-      if (external != null && await external.exists()) {
-        final backupContent = await external.readAsString();
-        if (backupContent.trim().isNotEmpty) {
-          // Restore back into internal file immediately
-          await internal.writeAsString(backupContent);
-          return backupContent;
+      // Fallback to external backup file (best-effort)
+      try {
+        final external = await getExternalBackupFile(fileName);
+        if (external != null && await external.exists()) {
+          final backupContent = await external.readAsString();
+          if (backupContent.trim().isNotEmpty) {
+            await internal.writeAsString(backupContent);
+            return backupContent;
+          }
         }
-      }
+      } catch (_) {}
     } catch (e) {
       debugPrint('StoragePersistenceHelper.readData error for $fileName: $e');
     }
@@ -76,14 +77,16 @@ class StoragePersistenceHelper {
       if (await internal.exists()) await internal.delete();
       await tmp.rename(internal.path);
 
-      // 2. Mirror to external backup storage if available
-      final external = await getExternalBackupFile(fileName);
-      if (external != null) {
-        final extTmp = File('${external.path}.tmp');
-        await extTmp.writeAsString(content);
-        if (await external.exists()) await external.delete();
-        await extTmp.rename(external.path);
-      }
+      // 2. Mirror to external backup storage if available (best-effort)
+      try {
+        final external = await getExternalBackupFile(fileName);
+        if (external != null) {
+          final extTmp = File('${external.path}.tmp');
+          await extTmp.writeAsString(content);
+          if (await external.exists()) await external.delete();
+          await extTmp.rename(external.path);
+        }
+      } catch (_) {}
     } catch (e) {
       debugPrint('StoragePersistenceHelper.writeData error for $fileName: $e');
     }

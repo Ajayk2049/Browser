@@ -46,6 +46,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         flutterEngine.platformViewsController.registry.registerViewFactory("com.dab/geckoview", GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger))
+        extensionManager = ExtensionManager(this, flutterEngine.dartExecutor.binaryMessenger)
 
         downloaderChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
         downloaderChannel?.setMethodCallHandler { call, result ->
@@ -54,11 +55,6 @@ class MainActivity : FlutterActivity() {
                     CoroutineScope(Dispatchers.Default).launch {
                         try {
                             GeckoRuntimeProvider.get(applicationContext)
-                            withContext(Dispatchers.Main) {
-                                if (extensionManager == null) {
-                                    extensionManager = ExtensionManager(this@MainActivity, flutterEngine.dartExecutor.binaryMessenger)
-                                }
-                            }
                         } catch (_: Exception) {}
                     }
                     result.success(true)
