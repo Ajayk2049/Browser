@@ -26,35 +26,22 @@ class DownloadEngine(
     fun setSpeedLimit(bytesPerSec: Long) { speedLimitBytesPerSec = bytesPerSec; task.speedLimitBytesPerSec = bytesPerSec }
     fun start() {
         if (task.status == DownloadStatus.DOWNLOADING) return
-        isPaused.set(false)
-        isCanceled.set(false)
-        task.status = DownloadStatus.CONNECTING
-        onProgressUpdate(task)
-
+        isPaused.set(false); isCanceled.set(false); task.status = DownloadStatus.CONNECTING; onProgressUpdate(task)
         downloadJob = scope.launch {
-            try {
-                executeDownload()
-            } catch (_: CancellationException) {
-            } catch (e: Exception) {
-                task.status = DownloadStatus.FAILED
-                task.errorMessage = e.message ?: "Download failed"
-                task.speedBytesPerSec = 0L
-                onProgressUpdate(task)
+            try { executeDownload() } catch (_: CancellationException) {} catch (e: Exception) {
+                task.status = DownloadStatus.FAILED; task.errorMessage = e.message ?: "Download failed"; task.speedBytesPerSec = 0L; onProgressUpdate(task)
             }
         }
     }
 
     fun pause() {
-        isPaused.set(true); downloadJob?.cancel()
-        task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L
+        isPaused.set(true); downloadJob?.cancel(); task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L
         onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
     }
 
     fun cancel() {
-        isCanceled.set(true); downloadJob?.cancel()
-        task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
-        val part = File("${task.destinationPath}.part")
-        if (part.exists()) part.delete()
+        isCanceled.set(true); downloadJob?.cancel(); task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
+        try { val part = File("${task.destinationPath}.part"); if (part.exists()) part.delete() } catch (_: Exception) {}
         onProgressUpdate(task)
     }
 
@@ -117,7 +104,7 @@ class DownloadEngine(
             }
 
             if (!isPaused.get() && !isCanceled.get()) {
-                val allFinished = task.segments.all { it.isFinished } || (task.totalBytes > 0 && task.downloadedBytes >= task.totalBytes)
+                val allFinished = task.segments.isNotEmpty() && task.segments.all { it.isFinished }
                 if (allFinished) {
                     synchronized(rafLock) { try { raf.close() } catch (_: Exception) {} }
                     if (destFile.exists()) destFile.delete()
@@ -183,8 +170,14 @@ class DownloadEngine(
         val buffer = ByteArray(32 * 1024)
         var bytesRead: Int
         try {
-            while (input.read(buffer).also { bytesRead = it } != -1) {
-                if (isPaused.get() || isCanceled.get()) break
+            while (!isPaused.get() && !isCanceled.get()) {
+                val remaining = if (segment.endByte != Long.MAX_VALUE) {
+                    (segment.endByte - (segment.startByte + segment.downloadedBytes) + 1).coerceAtLeast(0L)
+                } else Long.MAX_VALUE
+                if (remaining <= 0) break
+                val toRead = if (remaining < buffer.size) remaining.toInt() else buffer.size
+                bytesRead = input.read(buffer, 0, toRead)
+                if (bytesRead == -1) break
                 throttleBandwidth(bytesRead)
                 synchronized(rafLock) {
                     raf.seek(segment.startByte + segment.downloadedBytes)

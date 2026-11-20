@@ -1,11 +1,18 @@
 package com.dab.browser
 
 import kotlinx.coroutines.*
+import org.libtorrent4j.Sha1Hash
+import org.libtorrent4j.TorrentHandle
+import org.libtorrent4j.TorrentInfo
+import org.libtorrent4j.TorrentStatus
 import java.io.File
-import java.io.RandomAccessFile
 import java.net.URLDecoder
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Real BitTorrent & Magnet engine powered by libtorrent4j.
+ * Complies with rules.md §13, §26.5, §29.2 (< 250 lines).
+ */
 class TorrentEngine(
     val task: DownloadTask,
     private val onProgressUpdate: (DownloadTask) -> Unit
@@ -14,6 +21,7 @@ class TorrentEngine(
     private val isPaused = AtomicBoolean(false)
     private val isCanceled = AtomicBoolean(false)
     private var torrentJob: Job? = null
+    private var handle: TorrentHandle? = null
 
     data class MagnetInfo(
         val infoHash: String,
@@ -24,10 +32,8 @@ class TorrentEngine(
 
     fun start() {
         if (task.status == DownloadStatus.DOWNLOADING) return
-        isPaused.set(false)
-        isCanceled.set(false)
-        task.status = DownloadStatus.CONNECTING
-        onProgressUpdate(task)
+        isPaused.set(false); isCanceled.set(false)
+        task.status = DownloadStatus.CONNECTING; onProgressUpdate(task)
 
         torrentJob = scope.launch {
             try {
@@ -43,89 +49,128 @@ class TorrentEngine(
     }
 
     fun pause() {
-        isPaused.set(true)
-        torrentJob?.cancel()
-        task.status = DownloadStatus.PAUSED
-        task.speedBytesPerSec = 0L
+        isPaused.set(true); handle?.pause(); torrentJob?.cancel()
+        task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L
         onProgressUpdate(task)
     }
 
     fun cancel() {
-        isCanceled.set(true)
-        torrentJob?.cancel()
-        task.status = DownloadStatus.CANCELED
-        task.speedBytesPerSec = 0L
+        isCanceled.set(true); torrentJob?.cancel()
+        val h = handle
+        if (h != null && h.isValid) {
+            try { TorrentSessionManager.session.remove(h) } catch (_: Exception) {}
+        }
+        task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
         try {
+            val dest = File(task.destinationPath)
+            if (dest.exists()) dest.deleteRecursively()
             val part = File("${task.destinationPath}.part")
             if (part.exists()) part.delete()
         } catch (_: Exception) {}
         onProgressUpdate(task)
     }
 
+    fun setSpeedLimit(bytesPerSec: Long) {
+        task.speedLimitBytesPerSec = bytesPerSec
+        val h = handle
+        if (h != null && h.isValid) {
+            try { h.downloadLimit(if (bytesPerSec > 0) bytesPerSec.toInt() else 0) } catch (_: Exception) {}
+        }
+    }
+
     private suspend fun executeTorrent() = withContext(Dispatchers.IO) {
-        val magnet = parseMagnet(task.url)
+        TorrentSessionManager.ensureStarted()
+        val session = TorrentSessionManager.session
+
         val destFile = File(task.destinationPath)
-        val partFile = File("${task.destinationPath}.part")
-        destFile.parentFile?.mkdirs()
+        val saveDir = destFile.parentFile ?: File("/storage/emulated/0/Download/Dab Browser")
+        saveDir.mkdirs()
 
-        // 1. Connect to trackers & DHT metadata resolution
-        task.status = DownloadStatus.CONNECTING
-        onProgressUpdate(task)
-        delay(900)
+        val magnet = parseMagnet(task.url)
+        val infoHashStr = magnet.infoHash
+        val sha1 = if (infoHashStr.isNotEmpty() && infoHashStr.length == 40) {
+            try { Sha1Hash.parseHex(infoHashStr) } catch (_: Exception) { null }
+        } else null
 
-        // 2. Discover peers & seeders
-        task.seeders = (24..58).random()
-        task.leechers = (4..18).random()
+        var th = if (sha1 != null) session.find(sha1) else null
+        if (th == null || !th.isValid) {
+            if (task.url.startsWith("magnet:", true)) {
+                session.download(task.url, saveDir)
+            } else if (task.url.endsWith(".torrent", true)) {
+                val tFile = File(task.url)
+                if (tFile.exists()) {
+                    session.download(TorrentInfo(tFile), saveDir)
+                } else {
+                    session.download(task.url, saveDir)
+                }
+            } else {
+                session.download(task.url, saveDir)
+            }
 
-        if (task.totalBytes <= 0) {
-            task.totalBytes = if (magnet.exactSize > 0) magnet.exactSize else estimateTorrentSize(magnet.displayName)
+            for (i in 0 until 60) {
+                if (isPaused.get() || isCanceled.get()) return@withContext
+                delay(250)
+                if (sha1 != null) th = session.find(sha1)
+                if (th != null && th.isValid) break
+            }
         }
 
-        var raf: RandomAccessFile? = null
-        try {
-            raf = RandomAccessFile(partFile, "rw")
-        } catch (_: Exception) {}
+        if (th == null || !th.isValid) {
+            // Find by matching any newly added torrents
+            val torrents = session.torrents()
+            th = torrents.lastOrNull { it.isValid }
+        }
+
+        if (th == null || !th.isValid) throw Exception("Failed to start torrent session for magnet")
+        handle = th
+        if (task.speedLimitBytesPerSec > 0) {
+            try { th.downloadLimit(task.speedLimitBytesPerSec.toInt()) } catch (_: Exception) {}
+        }
+        th.resume()
 
         task.status = DownloadStatus.DOWNLOADING
         onProgressUpdate(task)
 
-        // 3. Peer chunk download loop
-        var downloaded = task.downloadedBytes
-        val total = task.totalBytes
-        var lastDownloaded = downloaded
-        var lastTime = System.currentTimeMillis()
-        val dummyBuffer = ByteArray(32 * 1024)
+        var completed = false
+        while (!completed && !isPaused.get() && !isCanceled.get()) {
+            delay(500)
+            if (!th.isValid) break
+            val status = th.status()
 
-        while (downloaded < total && !isPaused.get() && !isCanceled.get()) {
-            val chunkSize = (256 * 1024..768 * 1024).random().toLong()
-            downloaded = (downloaded + chunkSize).coerceAtMost(total)
-            task.downloadedBytes = downloaded
+            task.seeders = status.numSeeds()
+            val peers = status.numPeers()
+            task.leechers = (peers - status.numSeeds()).coerceAtLeast(0)
 
-            try {
-                raf?.seek(downloaded.coerceAtLeast(0L))
-                raf?.write(dummyBuffer, 0, 1024)
-            } catch (_: Exception) {}
-
-            val now = System.currentTimeMillis()
-            val dt = (now - lastTime) / 1000.0
-            if (dt >= 0.25) {
-                task.speedBytesPerSec = ((downloaded - lastDownloaded) / dt).toLong().coerceAtLeast(800_000L)
-                lastDownloaded = downloaded
-                lastTime = now
+            val tf = try { th.torrentFile() } catch (_: Exception) { null }
+            if (tf != null) {
+                if (task.totalBytes <= 0) task.totalBytes = tf.totalSize()
+                val realName = tf.name()
+                if (realName.isNotEmpty() && destFile.name != realName) {
+                    task.destinationPath = File(saveDir, realName).absolutePath
+                }
+            } else if (task.totalBytes <= 0) {
+                val wanted = status.totalWanted()
+                if (wanted > 0) task.totalBytes = wanted
             }
-            onProgressUpdate(task)
-            delay(120)
-        }
 
-        try { raf?.close() } catch (_: Exception) {}
+            val done = status.totalDone()
+            task.downloadedBytes = done
+            task.speedBytesPerSec = status.downloadRate().toLong().coerceAtLeast(0L)
 
-        if (!isPaused.get() && !isCanceled.get() && downloaded >= total) {
-            try {
-                if (destFile.exists()) destFile.delete()
-                partFile.renameTo(destFile)
-            } catch (_: Exception) {}
-            task.status = DownloadStatus.COMPLETED
-            task.speedBytesPerSec = 0L
+            val state = status.state()
+            if (state == TorrentStatus.State.DOWNLOADING || state == TorrentStatus.State.DOWNLOADING_METADATA) {
+                task.status = DownloadStatus.DOWNLOADING
+            } else if (state == TorrentStatus.State.CHECKING_FILES || state == TorrentStatus.State.CHECKING_RESUME_DATA) {
+                task.status = DownloadStatus.CONNECTING
+            }
+
+            val isDone = status.isFinished || state == TorrentStatus.State.FINISHED || state == TorrentStatus.State.SEEDING || (task.totalBytes > 0 && done >= task.totalBytes)
+            if (isDone) {
+                completed = true
+                task.status = DownloadStatus.COMPLETED
+                task.speedBytesPerSec = 0L
+                if (task.totalBytes > 0) task.downloadedBytes = task.totalBytes
+            }
             onProgressUpdate(task)
         }
     }
@@ -133,7 +178,7 @@ class TorrentEngine(
     companion object {
         fun isMagnetOrTorrent(url: String): Boolean {
             val lower = url.lowercase().trim()
-            return lower.startsWith("magnet:?") || lower.endsWith(".torrent")
+            return lower.startsWith("magnet:") || lower.endsWith(".torrent")
         }
 
         fun parseMagnet(url: String): MagnetInfo {
@@ -142,51 +187,25 @@ class TorrentEngine(
             var exactSize = -1L
             val trackers = mutableListOf<String>()
 
-            if (url.startsWith("magnet:?")) {
-                val params = url.substringAfter("magnet:?").split("&")
-                for (p in params) {
-                    val kv = p.split("=", limit = 2)
-                    if (kv.size == 2) {
-                        val key = kv[0].lowercase()
-                        val value = URLDecoder.decode(kv[1], "UTF-8")
+            if (url.startsWith("magnet:?", true)) {
+                val query = url.substringAfter("magnet:?")
+                query.split("&").forEach { param ->
+                    val parts = param.split("=", limit = 2)
+                    if (parts.size == 2) {
+                        val key = parts[0].lowercase()
+                        val value = try { URLDecoder.decode(parts[1], "UTF-8") } catch (_: Exception) { parts[1] }
                         when (key) {
-                            "xt" -> infoHash = value.removePrefix("urn:btih:")
+                            "xt" -> if (value.startsWith("urn:btih:", true)) infoHash = value.substring(9)
                             "dn" -> dn = value
                             "tr" -> trackers.add(value)
                             "xl" -> exactSize = value.toLongOrNull() ?: -1L
                         }
                     }
                 }
-            } else {
+            } else if (url.endsWith(".torrent", true)) {
                 dn = File(url).name
             }
-
-            if (exactSize <= 0L) {
-                exactSize = estimateTorrentSize(dn)
-            }
             return MagnetInfo(infoHash, dn, trackers, exactSize)
-        }
-
-        fun estimateTorrentSize(name: String): Long {
-            val sizePattern = java.util.regex.Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(GB|MB|GiB|MiB)", java.util.regex.Pattern.CASE_INSENSITIVE)
-            val matcher = sizePattern.matcher(name)
-            if (matcher.find()) {
-                val num = matcher.group(1)?.toDoubleOrNull() ?: 0.0
-                val unit = matcher.group(2)?.uppercase() ?: "MB"
-                val mult = if (unit.startsWith("G")) 1024L * 1024L * 1024L else 1024L * 1024L
-                val bytes = (num * mult).toLong()
-                if (bytes > 0) return bytes
-            }
-
-            val lower = name.lowercase()
-            return when {
-                lower.contains("2160p") || lower.contains("4k") -> 8L * 1024L * 1024L * 1024L
-                lower.contains("1080p") -> 3L * 1024L * 1024L * 1024L
-                lower.contains("720p") -> 1400L * 1024L * 1024L
-                lower.contains("480p") || lower.contains("dvdrip") -> 700L * 1024L * 1024L
-                lower.contains("season") || lower.contains("complete") -> 12L * 1024L * 1024L * 1024L
-                else -> 2800L * 1024L * 1024L
-            }
         }
     }
 }

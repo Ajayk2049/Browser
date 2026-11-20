@@ -58,9 +58,7 @@ class DownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        db = DownloadDatabase(applicationContext)
-        loadSavedTasks()
-        createNotificationChannel()
+        db = DownloadDatabase(applicationContext); loadSavedTasks(); createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
@@ -89,9 +87,7 @@ class DownloadService : Service() {
         }
         if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer
-        if (startNow) { db.upsertTask(task); enqueueTask(task) } else {
-            task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
-        }
+        if (startNow) { db.upsertTask(task); enqueueTask(task) } else { task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true) }
     }
 
     private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
@@ -101,15 +97,11 @@ class DownloadService : Service() {
         val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } +
                 activeTorrentEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
         val host = getHost(task.finalUrl ?: task.url)
-        val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count {
-            it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host
-        }
+        val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host }
         if (running < maxConcurrentDownloads && hostRunning < 2) {
             launchEngine(task)
         } else {
-            task.status = DownloadStatus.QUEUED; task.speedBytesPerSec = 0L
-            if (!taskQueue.contains(task.id)) taskQueue.add(task.id)
-            db.upsertTask(task); dispatchProgress(task, isStateChange = true)
+            task.status = DownloadStatus.QUEUED; task.speedBytesPerSec = 0L; if (!taskQueue.contains(task.id)) taskQueue.add(task.id); db.upsertTask(task); dispatchProgress(task, isStateChange = true)
         }
     }
 
@@ -126,6 +118,7 @@ class DownloadService : Service() {
                     }
                 }
             }
+            if (globalSpeedLimitBytesPerSec > 0 && task.speedLimitBytesPerSec == 0L) tEngine.setSpeedLimit(globalSpeedLimitBytesPerSec)
             tEngine.start()
             return
         }
@@ -138,9 +131,7 @@ class DownloadService : Service() {
                 }
             }
         }
-        if (globalSpeedLimitBytesPerSec > 0 && engine.speedLimitBytesPerSec == 0L) {
-            engine.setSpeedLimit(globalSpeedLimitBytesPerSec)
-        }
+        if (globalSpeedLimitBytesPerSec > 0 && engine.speedLimitBytesPerSec == 0L) engine.setSpeedLimit(globalSpeedLimitBytesPerSec)
         engine.start()
     }
 
@@ -154,12 +145,8 @@ class DownloadService : Service() {
             val next = allTasks[nextId]
             if (next != null && next.status == DownloadStatus.QUEUED) {
                 val host = getHost(next.finalUrl ?: next.url)
-                val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count {
-                    it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host
-                }
-                if (hostRunning < 2) {
-                    launchEngine(next); slots--
-                } else delayed.add(nextId)
+                val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host }
+                if (hostRunning < 2) { launchEngine(next); slots-- } else delayed.add(nextId)
             }
         }
         taskQueue.addAll(delayed)
@@ -180,36 +167,24 @@ class DownloadService : Service() {
     fun cancelDownload(taskId: String) = deleteDownload(taskId, deleteFile = false)
 
     fun deleteDownload(taskId: String, deleteFile: Boolean = false) {
-        taskQueue.remove(taskId)
-        lastEmitTimes.remove(taskId)
-        lastDbSaveTimes.remove(taskId)
+        taskQueue.remove(taskId); lastEmitTimes.remove(taskId); lastDbSaveTimes.remove(taskId)
         val task = allTasks.remove(taskId)
-        activeEngines.remove(taskId)?.cancel()
-        activeTorrentEngines.remove(taskId)?.cancel()
+        activeEngines.remove(taskId)?.cancel(); activeTorrentEngines.remove(taskId)?.cancel()
         task?.let {
-            it.status = DownloadStatus.CANCELED
-            dispatchProgress(it, isStateChange = true)
+            it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true)
             if (deleteFile && it.destinationPath.isNotEmpty()) {
                 try {
-                    val f = File(it.destinationPath)
-                    if (f.exists()) f.delete()
-                    val part = File("${it.destinationPath}.part")
-                    if (part.exists()) part.delete()
+                    val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively()
+                    val part = File("${it.destinationPath}.part"); if (part.exists()) part.delete()
                 } catch (_: Exception) {}
             }
         }
-        db.deleteTask(taskId)
-        processQueue()
-        checkAutoStop()
+        db.deleteTask(taskId); processQueue(); checkAutoStop()
     }
 
     fun pauseAll() {
         taskQueue.clear()
-        allTasks.values.forEach { task ->
-            if (task.status == DownloadStatus.QUEUED) {
-                task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
-            }
-        }
+        allTasks.values.forEach { if (it.status == DownloadStatus.QUEUED) { it.status = DownloadStatus.PAUSED; db.upsertTask(it); dispatchProgress(it, isStateChange = true) } }
         activeEngines.values.forEach { it.pause() }; activeTorrentEngines.values.forEach { it.pause() }
         checkAutoStop()
     }
@@ -221,10 +196,12 @@ class DownloadService : Service() {
     fun setSpeedLimit(taskId: String?, bytesPerSec: Long) {
         val limit = bytesPerSec.coerceAtLeast(0L)
         if (taskId != null) {
-            activeEngines[taskId]?.setSpeedLimit(limit); allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
+            activeEngines[taskId]?.setSpeedLimit(limit); activeTorrentEngines[taskId]?.setSpeedLimit(limit)
+            allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         } else {
             globalSpeedLimitBytesPerSec = limit
-            activeEngines.values.forEach { it.setSpeedLimit(limit) }; allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
+            activeEngines.values.forEach { it.setSpeedLimit(limit) }; activeTorrentEngines.values.forEach { it.setSpeedLimit(limit) }
+            allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
         }
     }
 
@@ -240,15 +217,11 @@ class DownloadService : Service() {
 
     private fun ensureForegroundStarted() {
         if (!isForegroundActive) {
-            startAsForeground("Downloading", "Preparing download...", true)
+            val n = buildNotification("Downloading", "Preparing download...", 0, 0)
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, type) else startForeground(NOTIFICATION_ID, n)
             isForegroundActive = true
         }
-    }
-
-    private fun startAsForeground(title: String, text: String, indeterminate: Boolean = false) {
-        val n = buildNotification(title, text, if (indeterminate) 0 else 100, if (indeterminate) 0 else 50)
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, type) else startForeground(NOTIFICATION_ID, n)
     }
 
     private fun updateNotification(task: DownloadTask) {
@@ -270,8 +243,7 @@ class DownloadService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val c = NotificationChannel(CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW)
-            notificationManager.createNotificationChannel(c)
+            notificationManager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW))
         }
     }
 }

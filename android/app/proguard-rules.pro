@@ -11,3 +11,10 @@
 # WorkManager keep rules
 -keep class androidx.work.** { *; }
 
+# libtorrent4j keep rules
+-dontwarn org.libtorrent4j.**
+-keep class org.libtorrent4j.** { *; }
+-keep interface org.libtorrent4j.** { *; }
+-keep class org.libtorrent4j.swig.** { *; }
+
+
