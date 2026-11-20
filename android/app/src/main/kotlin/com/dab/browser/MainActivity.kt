@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     private var isBound = false
     private var eventSink: EventChannel.EventSink? = null
     private var downloaderChannel: MethodChannel? = null
+    private var extensionManager: ExtensionManager? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -35,22 +36,39 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun ensureDownloadServiceBound() {
+        if (!isBound) {
+            val intent = Intent(this, DownloadService::class.java)
+            startService(intent); bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-        }
-
         flutterEngine.platformViewsController.registry.registerViewFactory("com.dab/geckoview", GeckoViewFactory(flutterEngine.dartExecutor.binaryMessenger))
-        ExtensionManager(this, flutterEngine.dartExecutor.binaryMessenger)
-        val intent = Intent(this, DownloadService::class.java)
-        startService(intent); bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
         downloaderChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
         downloaderChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
+                "warmupGecko" -> {
+                    CoroutineScope(Dispatchers.Default).launch {
+                        try {
+                            GeckoRuntimeProvider.get(applicationContext)
+                            withContext(Dispatchers.Main) {
+                                if (extensionManager == null) {
+                                    extensionManager = ExtensionManager(this@MainActivity, flutterEngine.dartExecutor.binaryMessenger)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    result.success(true)
+                }
                 "startDownload" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+                    }
+                    ensureDownloadServiceBound()
                     val id = call.argument<String>("taskId") ?: ""
                     val url = call.argument<String>("url") ?: ""
                     val dest = call.argument<String>("destinationPath") ?: ""

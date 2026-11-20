@@ -54,13 +54,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _urlController = TextEditingController(text: '');
     _activeTabId = _createTab().id;
     _initAndRestoreSession();
-    BookmarksService.instance..init()..addListener(_syncData);
-    QuickLinksService.instance..init()..addListener(_syncData); SitePermissionsService.instance.init();
+    BookmarksService.instance.addListener(_syncData);
+    QuickLinksService.instance.addListener(_syncData);
     _channel.setMethodCallHandler((call) async { if (call.method == 'closeAllPrivateTabs') _closeAllPrivateTabs(); });
   }
 
   Future<void> _initAndRestoreSession() async {
-    await HomepageSettingsService.instance.init();
     final savedTabs = await TabPersistenceService.instance.loadSavedTabs();
     if (!mounted) return;
     setState(() {
@@ -242,8 +241,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
                     onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark, onOpenPageInfo: _openPageSecurity,
                     onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); },
-                    isLoading: _activeTab.isLoading, detectedMediaCount: _detectedMedia.length,
-                    onOpenMediaGrabber: _openMediaGrabber, selectedEngine: _selectedEngine,
+                    isLoading: _activeTab.isLoading, selectedEngine: _selectedEngine,
                     onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
                     isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
                   ),

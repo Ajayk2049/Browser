@@ -1,4 +1,3 @@
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'config/router.dart';
 import 'features/settings/services/appearance_settings_service.dart';
@@ -8,41 +7,34 @@ import 'theme/tokens/app_colors.dart';
 class BrowserApp extends StatelessWidget {
   const BrowserApp({super.key});
 
+  static final ThemeData _lightTheme = AppTheme.build(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: AppColors.brandSeed,
+      brightness: Brightness.light,
+    ),
+    brightness: Brightness.light,
+  );
+
+  static final ThemeData _darkTheme = AppTheme.build(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: AppColors.brandSeed,
+      brightness: Brightness.dark,
+    ),
+    brightness: Brightness.dark,
+  );
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: AppearanceSettingsService.instance,
       builder: (context, _) {
-        final themeMode = AppearanceSettingsService.instance.themeMode;
-        return DynamicColorBuilder(
-          builder: (lightDynamic, darkDynamic) {
-            final lightScheme = lightDynamic?.harmonized() ??
-                ColorScheme.fromSeed(
-                  seedColor: AppColors.brandSeed,
-                  brightness: Brightness.light,
-                );
-
-            final darkScheme = darkDynamic?.harmonized() ??
-                ColorScheme.fromSeed(
-                  seedColor: AppColors.brandSeed,
-                  brightness: Brightness.dark,
-                );
-
-            return MaterialApp.router(
-              title: 'Dab Browser',
-              debugShowCheckedModeBanner: false,
-              theme: AppTheme.build(
-                colorScheme: lightScheme,
-                brightness: Brightness.light,
-              ),
-              darkTheme: AppTheme.build(
-                colorScheme: darkScheme,
-                brightness: Brightness.dark,
-              ),
-              themeMode: themeMode,
-              routerConfig: appRouter,
-            );
-          },
+        return MaterialApp.router(
+          title: 'Dab Browser',
+          debugShowCheckedModeBanner: false,
+          theme: _lightTheme,
+          darkTheme: _darkTheme,
+          themeMode: AppearanceSettingsService.instance.themeMode,
+          routerConfig: appRouter,
         );
       },
     );

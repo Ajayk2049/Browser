@@ -19,8 +19,6 @@ class BrowserAddressBar extends StatefulWidget {
   final VoidCallback? onOpenPageInfo;
   final VoidCallback onReload;
   final bool isLoading;
-  final int detectedMediaCount;
-  final VoidCallback onOpenMediaGrabber;
   final SearchEngine selectedEngine;
   final ValueChanged<SearchEngine>? onEngineChanged;
   final bool isHome;
@@ -35,8 +33,6 @@ class BrowserAddressBar extends StatefulWidget {
     this.onOpenPageInfo,
     required this.onReload,
     this.isLoading = false,
-    this.detectedMediaCount = 0,
-    required this.onOpenMediaGrabber,
     this.selectedEngine = SearchEngine.duckDuckGo,
     this.onEngineChanged,
     this.isHome = false,
@@ -229,18 +225,6 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
                 ),
               ),
             ),
-            if (widget.detectedMediaCount > 0) ...[
-              const SizedBox(width: AppSpacing.x2),
-              Badge(
-                label: Text('${widget.detectedMediaCount}'),
-                child: IconButton.filledTonal(
-                  tooltip: 'Grab Media',
-                  style: IconButton.styleFrom(fixedSize: const Size(44, 44), padding: EdgeInsets.zero),
-                  icon: Icon(PhosphorIcons.broadcast, size: 20, color: colorScheme.primary),
-                  onPressed: widget.onOpenMediaGrabber,
-                ),
-              ),
-            ],
           ],
         ),
       ),

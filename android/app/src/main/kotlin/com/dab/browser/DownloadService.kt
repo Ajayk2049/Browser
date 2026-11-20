@@ -8,6 +8,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -50,7 +51,8 @@ class DownloadService : Service() {
 
     private val binder = LocalBinder()
     private lateinit var notificationManager: NotificationManager
-    private lateinit var db: DownloadDatabase
+    @Volatile private var _db: DownloadDatabase? = null
+    val db: DownloadDatabase get() = _db ?: synchronized(this) { _db ?: DownloadDatabase(applicationContext).also { _db = it } }
 
     inner class LocalBinder : Binder() { fun getService(): DownloadService = this@DownloadService }
     override fun onBind(intent: Intent?): IBinder = binder
@@ -58,7 +60,7 @@ class DownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        db = DownloadDatabase(applicationContext); loadSavedTasks(); createNotificationChannel()
+        createNotificationChannel(); CoroutineScope(Dispatchers.IO).launch { loadSavedTasks(db) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
@@ -71,10 +73,10 @@ class DownloadService : Service() {
         stopForeground(STOP_FOREGROUND_DETACH); stopSelf(startId)
     }
 
-    private fun loadSavedTasks() {
-        for (t in db.loadAllTasks()) {
+    private fun loadSavedTasks(database: DownloadDatabase) {
+        for (t in database.loadAllTasks()) {
             if (t.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING, DownloadStatus.QUEUED)) {
-                t.status = DownloadStatus.PAUSED; db.upsertTask(t)
+                t.status = DownloadStatus.PAUSED; database.upsertTask(t)
             }
             allTasks[t.id] = t
         }
