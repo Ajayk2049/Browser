@@ -15,26 +15,22 @@ import '../utils/url_metadata_helper.dart';
 class AddDownloadDialog extends StatefulWidget {
   final String? initialUrl;
   final String? suggestedFileName;
-  const AddDownloadDialog({super.key, this.initialUrl, this.suggestedFileName});
+  final int? totalBytes;
+  const AddDownloadDialog({super.key, this.initialUrl, this.suggestedFileName, this.totalBytes});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? suggestedFileName}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, suggestedFileName: suggestedFileName));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? suggestedFileName, int? totalBytes}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, suggestedFileName: suggestedFileName, totalBytes: totalBytes));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
 }
 
 class _AddDownloadDialogState extends State<AddDownloadDialog> {
-  late final TextEditingController _urlCtrl;
-  late final TextEditingController _refCtrl;
-  late final TextEditingController _nameCtrl;
+  late final TextEditingController _urlCtrl, _refCtrl, _nameCtrl;
   Timer? _debounceTimer;
-  String _ext = 'bin';
-  String _sizeText = 'Resolving file info...';
+  String _ext = 'bin', _sizeText = 'Resolving file info...', _storageText = 'Calculating storage...', _storagePath = '';
   int _resolvedTotalBytes = -1;
   bool _supportsResume = true;
-  String _storageText = 'Calculating storage...';
-  String _storagePath = '';
 
   @override
   void initState() {
@@ -42,20 +38,27 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final url = widget.initialUrl ?? '';
     _urlCtrl = TextEditingController(text: url);
     final uri = Uri.tryParse(url);
-    _refCtrl = TextEditingController(text: uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : '');
+    final isGv = uri?.host.contains('googlevideo.com') == true;
+    _refCtrl = TextEditingController(text: isGv ? 'https://www.youtube.com/' : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : ''));
     final isMag = url.toLowerCase().startsWith('magnet:');
     String cand = widget.suggestedFileName ?? '';
-    if (cand.isEmpty && url.isNotEmpty) {
+    if (cand.isNotEmpty && cand.contains('.')) {
+      _ext = cand.substring(cand.lastIndexOf('.') + 1);
+      cand = cand.substring(0, cand.lastIndexOf('.'));
+    } else if (cand.isEmpty && url.isNotEmpty) {
       try { cand = UrlMetadataHelper.extractCandidateName(url); } catch (_) {}
+      _ext = isMag ? 'torrent' : 'bin';
     }
     _nameCtrl = TextEditingController(text: cand);
-    try {
-      _ext = cand.isNotEmpty ? (isMag && !cand.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(cand)) : (isMag ? 'torrent' : 'bin');
-    } catch (_) { _ext = isMag ? 'torrent' : 'bin'; }
-    if (url.isNotEmpty) _sizeText = isMag ? 'Connecting to trackers to resolve size...' : 'Resolving file info...';
+    if (widget.totalBytes != null && widget.totalBytes! > 0) {
+      _resolvedTotalBytes = widget.totalBytes!;
+      _sizeText = '${(_resolvedTotalBytes / 1048576).toStringAsFixed(2)} MB ($_resolvedTotalBytes bytes)';
+    } else if (url.isNotEmpty) {
+      _sizeText = isMag ? 'Connecting to trackers to resolve size...' : 'Resolving file info...';
+    }
     _urlCtrl.addListener(_onUrlChanged);
     _initStorage();
-    if (url.isNotEmpty) {
+    if (url.isNotEmpty && widget.totalBytes == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _probe(url); });
     }
   }
@@ -65,13 +68,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final lower = url.toLowerCase();
     if (url.isEmpty || !(lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('magnet:'))) return;
     final uri = Uri.tryParse(url);
-    if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) _refCtrl.text = '${uri.scheme}://${uri.host}';
+    if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) _refCtrl.text = uri.host.contains('googlevideo.com') ? 'https://www.youtube.com/' : '${uri.scheme}://${uri.host}';
     final cand = UrlMetadataHelper.extractCandidateName(url);
     setState(() {
       if (_nameCtrl.text.isEmpty || _nameCtrl.text.startsWith('download_') || _nameCtrl.text == 'Resolving title...') _nameCtrl.text = cand;
-      final isMag = lower.startsWith('magnet:');
-      final cName = _nameCtrl.text.isNotEmpty ? _nameCtrl.text : cand;
-      _ext = isMag && !cName.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(cName);
+      _ext = lower.startsWith('magnet:') && !_nameCtrl.text.contains('.') ? 'torrent' : UrlMetadataHelper.extractExtension(_nameCtrl.text.isNotEmpty ? _nameCtrl.text : cand);
     });
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () { if (mounted) _probe(url); });
@@ -88,15 +89,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     try {
       await DownloadService().requestStoragePermission();
       final publicDir = await DownloadService().getPublicDownloadDirectory();
-      final targetPath = publicDir ?? (await getApplicationDocumentsDirectory()).path;
-      _storagePath = targetPath;
-      final space = await DownloadService().getDiskSpace(targetPath);
+      _storagePath = publicDir ?? (await getApplicationDocumentsDirectory()).path;
+      final space = await DownloadService().getDiskSpace(_storagePath);
       final a = space['available'] ?? 0, t = space['total'] ?? 0;
-      if (mounted) {
-        setState(() => _storageText = t > 0
-            ? 'Storage: ${(a / 1e9).toStringAsFixed(2)}GB/${(t / 1e9).toStringAsFixed(2)}GB, ${((a / t) * 100).toStringAsFixed(1)}% free'
-            : 'Storage: Ready');
-      }
+      if (mounted) setState(() => _storageText = t > 0 ? 'Storage: ${(a / 1e9).toStringAsFixed(2)}GB/${(t / 1e9).toStringAsFixed(2)}GB, ${((a / t) * 100).toStringAsFixed(1)}% free' : 'Storage: Ready');
     } catch (_) { if (mounted) setState(() => _storageText = 'Storage: Ready'); }
   }
 
@@ -110,11 +106,16 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       final meta = await UrlMetadataHelper.resolve(trimmed, referer: _refCtrl.text.trim());
       if (!mounted) return;
       setState(() {
-        _resolvedTotalBytes = meta.totalBytes;
-        _nameCtrl.text = meta.fileName;
-        _ext = meta.fileExtension;
+        if (_resolvedTotalBytes <= 0 && meta.totalBytes > 0) {
+          _resolvedTotalBytes = meta.totalBytes;
+          _sizeText = meta.formattedSize;
+        }
+        if (widget.suggestedFileName == null || widget.suggestedFileName!.isEmpty) {
+          _nameCtrl.text = meta.fileName;
+          _ext = meta.fileExtension;
+          _sizeText = meta.formattedSize;
+        }
         _supportsResume = meta.supportsResume;
-        _sizeText = meta.formattedSize;
         if (meta.finalUrl.isNotEmpty && meta.finalUrl != url && meta.finalUrl.startsWith('http')) {
           _refCtrl.text = url;
           _urlCtrl.text = meta.finalUrl;
@@ -127,7 +128,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final rawUrl = _urlCtrl.text.trim();
     if (rawUrl.isEmpty) return;
     var fileName = _nameCtrl.text.trim();
-    if (fileName.isEmpty || fileName.startsWith('download_')) fileName = UrlMetadataHelper.extractCandidateName(rawUrl);
+    if (fileName.isEmpty) fileName = widget.suggestedFileName ?? UrlMetadataHelper.extractCandidateName(rawUrl);
+    final cleanExt = _ext.replaceAll('.', '').trim();
+    if (cleanExt.isNotEmpty && !fileName.toLowerCase().endsWith('.${cleanExt.toLowerCase()}')) {
+      fileName = '$fileName.$cleanExt';
+    }
     final dest = '$_storagePath${Platform.pathSeparator}$fileName';
     final ref = _refCtrl.text.trim();
     final ok = await DownloadService().startDownload(
@@ -154,13 +159,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     ],
   );
 
-  InputDecoration _inputDeco(ColorScheme cs) => InputDecoration(
-    isDense: true, filled: true, fillColor: cs.surfaceContainerHighest,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.card), borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.card), borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.card), borderSide: BorderSide(color: cs.primary, width: 1.5)),
-  );
+  InputDecoration _inputDeco(ColorScheme cs) {
+    final b = OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.card), borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)));
+    return InputDecoration(isDense: true, filled: true, fillColor: cs.surfaceContainerHighest, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: b, enabledBorder: b, focusedBorder: b.copyWith(borderSide: BorderSide(color: cs.primary, width: 1.5)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,20 +228,17 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 ]),
               ),
               const SizedBox(height: AppSpacing.x3),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: Text('CANCEL', style: AppTypography.bodyMd.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))),
-                  const SizedBox(width: 4),
-                  TextButton(onPressed: () => _submit(startNow: false), child: Text('ADD', style: AppTypography.bodyMd.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700))),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    onPressed: () => _submit(startNow: true),
-                    style: FilledButton.styleFrom(backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A), foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white),
-                    child: Text('START', style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w700)),
-                  ),
-                ],
-              ),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: Text('CANCEL', style: AppTypography.bodyMd.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))),
+                const SizedBox(width: 4),
+                TextButton(onPressed: () => _submit(startNow: false), child: Text('ADD', style: AppTypography.bodyMd.copyWith(color: cs.onSurface, fontWeight: FontWeight.w700))),
+                const SizedBox(width: 4),
+                FilledButton(
+                  onPressed: () => _submit(startNow: true),
+                  style: FilledButton.styleFrom(backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A), foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white),
+                  child: Text('START', style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w700)),
+                ),
+              ]),
             ],
           ),
         ),

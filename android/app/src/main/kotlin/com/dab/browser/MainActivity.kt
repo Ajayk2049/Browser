@@ -52,10 +52,9 @@ class MainActivity : FlutterActivity() {
         downloaderChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "warmupGecko" -> {
+                    ensureDownloadServiceBound()
                     CoroutineScope(Dispatchers.Default).launch {
-                        try {
-                            GeckoRuntimeProvider.get(applicationContext)
-                        } catch (_: Exception) {}
+                        try { GeckoRuntimeProvider.get(applicationContext) } catch (_: Exception) {}
                     }
                     result.success(true)
                 }
@@ -73,7 +72,18 @@ class MainActivity : FlutterActivity() {
                     val ref = call.argument<String>("referer")
                     val totalBytes = (call.argument<Number>("totalBytes"))?.toLong() ?: -1L
                     if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
-                        downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes); result.success(true)
+                        if (downloadService != null) {
+                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes)
+                        } else {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                for (i in 0 until 30) {
+                                    if (downloadService != null) break
+                                    delay(100)
+                                }
+                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes)
+                            }
+                        }
+                        result.success(true)
                     } else result.error("INVALID_ARGS", "Missing args", null)
                 }
                 "getPublicDownloadDirectory" -> {

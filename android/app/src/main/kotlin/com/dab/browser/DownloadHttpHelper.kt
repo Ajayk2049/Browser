@@ -41,7 +41,14 @@ object DownloadHttpHelper {
                 instanceFollowRedirects = false
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "*/*")
-                val ref = referer?.takeIf { it.isNotBlank() } ?: URL(current).host.let { if (it.isNotEmpty()) "https://$it/" else null }
+                val host = try { URL(current).host } catch (_: Exception) { "" }
+                val ref = when {
+                    host.contains("googlevideo.com") -> "https://www.youtube.com/"
+                    referer?.contains("googlevideo.com") == true -> "https://www.youtube.com/"
+                    !referer.isNullOrBlank() -> referer
+                    host.isNotEmpty() -> "https://$host/"
+                    else -> null
+                }
                 if (ref != null) setRequestProperty("Referer", ref)
                 if (rangeHeader != null) setRequestProperty("Range", rangeHeader)
             }

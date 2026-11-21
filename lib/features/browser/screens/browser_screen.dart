@@ -210,7 +210,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
   void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
   void _handleMediaDetected(String u, String t, String typ) {
-    if (!_detectedMedia.any((m) => m.url == u)) setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
+    if (YoutubeGrabberService.isYouTubeUrl(_activeTab.url) || _detectedMedia.any((m) => m.url == u)) return;
+    setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
   }
   void _onUrlUpdated(String u) { setState(() { _urlController.text = u; _detectedMedia.clear(); }); _checkYouTube(u); }
   Future<void> _checkYouTube(String u) async {

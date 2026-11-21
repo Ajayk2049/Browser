@@ -28,47 +28,61 @@ class YoutubeGrabberService {
       final video = await yt.videos.get(url);
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
       final List<DetectedMedia> items = [];
+      final seenVideo = <String>{};
 
       // 1. Muxed streams (both video + audio in MP4/WebM)
       for (final stream in manifest.muxed.sortByVideoQuality()) {
-        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
+        final res = stream.videoQualityLabel;
         final tag = stream.container.name.toUpperCase();
+        final key = '${res}_$tag';
+        if (seenVideo.contains(key)) continue;
+        seenVideo.add(key);
+        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
         items.add(DetectedMedia(
           url: stream.url.toString(),
           title: video.title.trim(),
-          quality: stream.videoQualityLabel,
+          quality: res,
           size: '$mb MB',
+          totalBytes: stream.size.totalBytes,
           format: tag,
           type: 'video',
         ));
       }
 
-      // 2. High-res video only (1080p, 1440p, 4K)
+      // 2. Video-only streams (include 1080p, 720p, 480p, etc. if no muxed exists)
       for (final stream in manifest.videoOnly.sortByVideoQuality()) {
-        if (stream.videoResolution.height > 720) {
-          final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
-          final tag = stream.container.name.toUpperCase();
-          items.add(DetectedMedia(
-            url: stream.url.toString(),
-            title: video.title.trim(),
-            quality: '${stream.videoQualityLabel} (Video only)',
-            size: '$mb MB',
-            format: tag,
-            type: 'video',
-          ));
-        }
+        final res = stream.videoQualityLabel;
+        final tag = stream.container.name.toUpperCase();
+        final key = '${res}_$tag';
+        if (seenVideo.contains(key)) continue;
+        seenVideo.add(key);
+        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
+        items.add(DetectedMedia(
+          url: stream.url.toString(),
+          title: video.title.trim(),
+          quality: '$res (Video only)',
+          size: '$mb MB',
+          totalBytes: stream.size.totalBytes,
+          format: tag,
+          type: 'video',
+        ));
       }
 
       // 3. Audio only (MP4/M4A/WebM)
+      final seenAudio = <String>{};
       for (final stream in manifest.audioOnly.sortByBitrate()) {
-        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
         final kbps = stream.bitrate.kiloBitsPerSecond.round();
         final tag = stream.container.name.toUpperCase();
+        final key = '${kbps}_$tag';
+        if (seenAudio.contains(key)) continue;
+        seenAudio.add(key);
+        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
         items.add(DetectedMedia(
           url: stream.url.toString(),
           title: video.title.trim(),
           quality: '$kbps kbps',
           size: '$mb MB',
+          totalBytes: stream.size.totalBytes,
           format: tag,
           type: 'audio',
         ));

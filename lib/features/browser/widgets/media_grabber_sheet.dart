@@ -12,6 +12,7 @@ class DetectedMedia {
   final String? quality;
   final String? size;
   final String? format;
+  final int? totalBytes;
 
   const DetectedMedia({
     required this.url,
@@ -20,6 +21,7 @@ class DetectedMedia {
     this.quality,
     this.size,
     this.format,
+    this.totalBytes,
   });
 }
 
@@ -53,7 +55,7 @@ class _MediaGrabberSheetState extends State<MediaGrabberSheet> {
     final ext = media.format?.toLowerCase() ?? (media.type == 'audio' ? 'm4a' : 'mp4');
     final safeTitle = media.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     final suggested = safeTitle.isNotEmpty ? '$safeTitle.$ext' : null;
-    await AddDownloadDialog.show(context, initialUrl: media.url, suggestedFileName: suggested);
+    await AddDownloadDialog.show(context, initialUrl: media.url, suggestedFileName: suggested, totalBytes: media.totalBytes);
   }
 
   IconData _iconForType(String type) => switch (type.toLowerCase()) {
