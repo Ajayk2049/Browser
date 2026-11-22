@@ -1,20 +1,21 @@
 enum DownloadStatus {
-  pending, queued, connecting, downloading, paused, completed, failed, canceled;
+  pending, queued, connecting, downloading, paused, completed, failed, canceled, linkExpired;
 
-  static DownloadStatus fromString(String? value) => DownloadStatus.values.firstWhere(
-        (e) => e.name.toLowerCase() == value?.toLowerCase(),
-        orElse: () => DownloadStatus.pending,
-      );
+  static DownloadStatus fromString(String? value) {
+    final v = value?.toLowerCase();
+    if (v == 'link_expired') return DownloadStatus.linkExpired;
+    return DownloadStatus.values.firstWhere((e) => e.name.toLowerCase() == v, orElse: () => DownloadStatus.pending);
+  }
 }
 
 /// Represents the immutable state of a segmented download task.
 /// Complies with rules.md §29.1 and §29.2 (< 200 lines).
 class DownloadTask {
   final String id, url, destinationPath;
-  final int segmentsCount, totalBytes, downloadedBytes, speedBytesPerSec, speedLimitBytesPerSec, etaSeconds, seeders, leechers;
+  final int segmentsCount, totalBytes, downloadedBytes, speedBytesPerSec, speedLimitBytesPerSec, etaSeconds, seeders, leechers, audioBytes;
   final double progress;
   final DownloadStatus status;
-  final String? errorMessage, dateLabel;
+  final String? errorMessage, dateLabel, finalUrl, audioUrl, referer;
   final bool isTorrent;
   final List<double>? segmentProgresses;
 
@@ -27,6 +28,7 @@ class DownloadTask {
     this.downloadedBytes = 0,
     this.speedBytesPerSec = 0,
     this.speedLimitBytesPerSec = 0,
+    this.audioBytes = 0,
     this.progress = 0.0,
     this.etaSeconds = 0,
     this.status = DownloadStatus.pending,
@@ -35,6 +37,9 @@ class DownloadTask {
     this.seeders = 0,
     this.leechers = 0,
     this.dateLabel,
+    this.finalUrl,
+    this.audioUrl,
+    this.referer,
     this.segmentProgresses,
   });
 
@@ -100,6 +105,10 @@ class DownloadTask {
       seeders: (map['seeders'] as num?)?.toInt() ?? 0,
       leechers: (map['leechers'] as num?)?.toInt() ?? 0,
       dateLabel: map['dateLabel'] as String?,
+      finalUrl: map['finalUrl'] as String?,
+      audioUrl: map['audioUrl'] as String?,
+      referer: map['referer'] as String?,
+      audioBytes: (map['audioBytes'] as num?)?.toInt() ?? 0,
       segmentProgresses: (map['segmentProgresses'] as List<dynamic>?)?.map((e) => (e as num).toDouble()).toList(),
     );
   }
@@ -113,6 +122,7 @@ class DownloadTask {
         'downloadedBytes': downloadedBytes,
         'speedBytesPerSec': speedBytesPerSec,
         'speedLimitBytesPerSec': speedLimitBytesPerSec,
+        'audioBytes': audioBytes,
         'progress': progress,
         'etaSeconds': etaSeconds,
         'status': status.name,
@@ -121,6 +131,9 @@ class DownloadTask {
         'seeders': seeders,
         'leechers': leechers,
         'dateLabel': dateLabel,
+        'finalUrl': finalUrl,
+        'audioUrl': audioUrl,
+        'referer': referer,
         'segmentProgresses': segmentProgresses,
       };
 
@@ -133,6 +146,7 @@ class DownloadTask {
     int? downloadedBytes,
     int? speedBytesPerSec,
     int? speedLimitBytesPerSec,
+    int? audioBytes,
     double? progress,
     int? etaSeconds,
     DownloadStatus? status,
@@ -141,6 +155,9 @@ class DownloadTask {
     int? seeders,
     int? leechers,
     String? dateLabel,
+    String? finalUrl,
+    String? audioUrl,
+    String? referer,
     List<double>? segmentProgresses,
   }) {
     return DownloadTask(
@@ -152,6 +169,7 @@ class DownloadTask {
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       speedBytesPerSec: speedBytesPerSec ?? this.speedBytesPerSec,
       speedLimitBytesPerSec: speedLimitBytesPerSec ?? this.speedLimitBytesPerSec,
+      audioBytes: audioBytes ?? this.audioBytes,
       progress: progress ?? this.progress,
       etaSeconds: etaSeconds ?? this.etaSeconds,
       status: status ?? this.status,
@@ -160,6 +178,9 @@ class DownloadTask {
       seeders: seeders ?? this.seeders,
       leechers: leechers ?? this.leechers,
       dateLabel: dateLabel ?? this.dateLabel,
+      finalUrl: finalUrl ?? this.finalUrl,
+      audioUrl: audioUrl ?? this.audioUrl,
+      referer: referer ?? this.referer,
       segmentProgresses: segmentProgresses ?? this.segmentProgresses,
     );
   }

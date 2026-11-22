@@ -13,14 +13,12 @@ import '../utils/url_metadata_helper.dart';
 /// Material 3 monochrome Download dialog matching 1DM+ layout with auto-resolution.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
-  final String? initialUrl;
-  final String? audioUrl;
-  final String? suggestedFileName;
-  final int? totalBytes;
-  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.suggestedFileName, this.totalBytes});
+  final String? initialUrl, audioUrl, suggestedFileName, referer;
+  final int? totalBytes, audioBytes;
+  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, String? suggestedFileName, int? totalBytes}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, suggestedFileName: suggestedFileName, totalBytes: totalBytes));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -40,7 +38,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     _urlCtrl = TextEditingController(text: url);
     final uri = Uri.tryParse(url);
     final isGv = uri?.host.contains('googlevideo.com') == true;
-    _refCtrl = TextEditingController(text: isGv ? 'https://www.youtube.com/' : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : ''));
+    final defaultRef = isGv ? 'https://www.youtube.com/' : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}' : '');
+    _refCtrl = TextEditingController(text: widget.referer?.isNotEmpty == true ? widget.referer! : defaultRef);
     final isMag = url.toLowerCase().startsWith('magnet:');
     String cand = widget.suggestedFileName ?? '';
     if (cand.isNotEmpty && cand.contains('.')) {
@@ -69,7 +68,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final lower = url.toLowerCase();
     if (url.isEmpty || !(lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('magnet:'))) return;
     final uri = Uri.tryParse(url);
-    if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) _refCtrl.text = uri.host.contains('googlevideo.com') ? 'https://www.youtube.com/' : '${uri.scheme}://${uri.host}';
+    if (uri != null && uri.host.isNotEmpty && _refCtrl.text.isEmpty) _refCtrl.text = uri.host.contains('googlevideo.com') ? '' : '${uri.scheme}://${uri.host}';
     final cand = UrlMetadataHelper.extractCandidateName(url);
     setState(() {
       if (_nameCtrl.text.isEmpty || _nameCtrl.text.startsWith('download_') || _nameCtrl.text == 'Resolving title...') _nameCtrl.text = cand;
@@ -144,6 +143,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       referer: ref.isNotEmpty ? ref : null,
       totalBytes: _resolvedTotalBytes > 0 ? _resolvedTotalBytes : null,
       audioUrl: widget.audioUrl,
+      audioBytes: widget.audioBytes,
     );
     if (mounted) {
       Navigator.pop(context, ok);

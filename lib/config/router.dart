@@ -14,10 +14,22 @@ import '../features/settings/screens/theme_settings_screen.dart';
 import '../features/settings/settings.dart';
 
 /// App router configuration adhering to rules.md §29.5 and §32.3.
-/// Configured with BrowserScreen as initial route.
 final appRouter = GoRouter(
   initialLocation:
       OnboardingService.instance.hasCompletedOnboarding ? '/' : '/welcome',
+  refreshListenable: OnboardingService.instance,
+  redirect: (context, state) {
+    final hasCompleted = OnboardingService.instance.hasCompletedOnboarding;
+    final isOnWelcome = state.matchedLocation == '/welcome';
+
+    if (!hasCompleted && !isOnWelcome) {
+      return '/welcome';
+    }
+    if (hasCompleted && isOnWelcome) {
+      return '/';
+    }
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/welcome',

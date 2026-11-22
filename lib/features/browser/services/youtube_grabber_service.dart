@@ -21,6 +21,51 @@ class YoutubeGrabberService {
         !lower.contains('youtube.com/feed');
   }
 
+  static String? extractVideoId(String url, {String? referer, String? finalUrl}) {
+    for (final target in [referer, url, finalUrl]) {
+      if (target == null || target.isEmpty) continue;
+      final uri = Uri.tryParse(target);
+      if (uri == null) continue;
+      if (uri.queryParameters.containsKey('v')) return uri.queryParameters['v'];
+      if (uri.host.contains('youtu.be') && uri.pathSegments.isNotEmpty) return uri.pathSegments.last;
+      final idParam = uri.queryParameters['id'];
+      if (idParam != null && idParam.isNotEmpty) {
+        final stripped = idParam.startsWith('o-') ? idParam.substring(2) : idParam;
+        if (stripped.length == 11) return stripped;
+      }
+    }
+    return null;
+  }
+
+  Future<({String videoUrl, String? audioUrl})?> refreshStreams({
+    required String videoId,
+    required String targetVideoItag,
+    String? targetAudioItag,
+  }) async {
+    final yt = YoutubeExplode();
+    try {
+      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final videoStream = manifest.videoOnly.where((s) => s.tag.toString() == targetVideoItag).firstOrNull ??
+          manifest.muxed.where((s) => s.tag.toString() == targetVideoItag).firstOrNull;
+      if (videoStream == null) {
+        debugPrint('[YoutubeGrabber] itag $targetVideoItag not found in refreshed manifest');
+        return null;
+      }
+      String? audioUrl;
+      if (targetAudioItag != null) {
+        final audioStream = manifest.audioOnly.where((s) => s.tag.toString() == targetAudioItag).firstOrNull ??
+            manifest.audioOnly.sortByBitrate().firstOrNull;
+        audioUrl = audioStream?.url.toString();
+      }
+      return (videoUrl: videoStream.url.toString(), audioUrl: audioUrl);
+    } catch (e) {
+      debugPrint('[YoutubeGrabber] Error refreshing streams for $videoId: $e');
+      return null;
+    } finally {
+      yt.close();
+    }
+  }
+
   Future<List<DetectedMedia>> extractStreams(String url) async {
     if (!isYouTubeUrl(url)) return [];
     final yt = YoutubeExplode();
@@ -34,7 +79,7 @@ class YoutubeGrabberService {
       final aacStreams = manifest.audioOnly
           .where((s) => s.container.name.toLowerCase() == 'mp4' || s.codec.mimeType.contains('mp4') || s.codec.mimeType.contains('aac'))
           .sortByBitrate();
-      final bestAudio = aacStreams.isNotEmpty ? aacStreams.last : null;
+      final bestAudio = aacStreams.isNotEmpty ? aacStreams.first : null;
 
       // 1. Muxed streams (both video + audio in MP4, omit WebM)
       for (final stream in manifest.muxed.sortByVideoQuality()) {
@@ -46,6 +91,7 @@ class YoutubeGrabberService {
         final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
         items.add(DetectedMedia(
           url: stream.url.toString(),
+          referer: 'https://www.youtube.com/watch?v=${video.id.value}',
           title: video.title.trim(),
           quality: res,
           size: '$mb MB',
@@ -68,6 +114,8 @@ class YoutubeGrabberService {
           items.add(DetectedMedia(
             url: stream.url.toString(),
             audioUrl: bestAudio.url.toString(),
+            audioBytes: bestAudio.size.totalBytes,
+            referer: 'https://www.youtube.com/watch?v=${video.id.value}',
             title: video.title.trim(),
             quality: res,
             size: '$mb MB',
@@ -89,6 +137,7 @@ class YoutubeGrabberService {
         final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
         items.add(DetectedMedia(
           url: stream.url.toString(),
+          referer: 'https://www.youtube.com/watch?v=${video.id.value}',
           title: video.title.trim(),
           quality: '$kbps kbps',
           size: '$mb MB',

@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 2) {
+class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -21,7 +21,9 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 error_message TEXT,
                 final_url TEXT,
                 content_type TEXT,
-                referer TEXT
+                referer TEXT,
+                audio_url TEXT,
+                audio_bytes INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
 
@@ -43,6 +45,10 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
             try { db.execSQL("ALTER TABLE tasks ADD COLUMN content_type TEXT") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE tasks ADD COLUMN referer TEXT") } catch (_: Exception) {}
         }
+        if (oldVersion < 3) {
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN audio_url TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN audio_bytes INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+        }
     }
 
     @Synchronized
@@ -61,6 +67,8 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
             put("final_url", task.finalUrl)
             put("content_type", task.resolvedContentType)
             put("referer", task.referer)
+            put("audio_url", task.audioUrl)
+            put("audio_bytes", task.audioBytes)
         }
         db.insertWithOnConflict("tasks", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -105,6 +113,8 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 val finalUrl = c.getColumnIndex("final_url").takeIf { it >= 0 }?.let { c.getString(it) }
                 val contentType = c.getColumnIndex("content_type").takeIf { it >= 0 }?.let { c.getString(it) }
                 val referer = c.getColumnIndex("referer").takeIf { it >= 0 }?.let { c.getString(it) }
+                val audioUrl = c.getColumnIndex("audio_url").takeIf { it >= 0 }?.let { c.getString(it) }
+                val audioBytes = c.getColumnIndex("audio_bytes").takeIf { it >= 0 }?.let { c.getLong(it) } ?: 0L
 
                 val status = try {
                     DownloadStatus.valueOf(statusStr)
@@ -126,7 +136,9 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                     isTorrent = isTor,
                     finalUrl = finalUrl,
                     resolvedContentType = contentType,
-                    referer = referer
+                    referer = referer,
+                    audioUrl = audioUrl,
+                    audioBytes = audioBytes
                 )
 
                 // Load segments for this task

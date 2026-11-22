@@ -12,8 +12,9 @@ import 'features/settings/services/appearance_settings_service.dart';
 import 'features/settings/services/homepage_settings_service.dart';
 import 'features/settings/services/search_engine_settings_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await OnboardingService.instance.init();
   runApp(
     const ProviderScope(
       child: BrowserApp(),
@@ -31,7 +32,6 @@ void main() {
       HomepageSettingsService.instance.init(),
       SearchEngineSettingsService.instance.init(),
       AppearanceSettingsService.instance.init(),
-      OnboardingService.instance.init(),
       SitePermissionsService.instance.init(),
     ]);
   });

@@ -31,28 +31,14 @@ class DownloadTaskCard extends StatelessWidget {
   }
 
   IconData _getFileIcon(String name) {
-    if (task.isTorrent || task.url.startsWith('magnet:?')) {
-      return PhosphorIcons.magnet;
-    }
+    if (task.isTorrent || task.url.startsWith('magnet:?')) return PhosphorIcons.magnet;
     final lower = name.toLowerCase();
-    if (lower.endsWith('.torrent')) {
-      return PhosphorIcons.magnet;
-    }
-    if (lower.endsWith('.iso') || lower.endsWith('.img') || lower.endsWith('.dmg')) {
-      return PhosphorIcons.disc;
-    }
-    if (lower.endsWith('.flac') || lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
-      return PhosphorIcons.musicNote;
-    }
-    if (lower.endsWith('.pdf') || lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.txt')) {
-      return PhosphorIcons.fileText;
-    }
-    if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.mov')) {
-      return PhosphorIcons.filmStrip;
-    }
-    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.tar')) {
-      return PhosphorIcons.archive;
-    }
+    if (lower.endsWith('.torrent')) return PhosphorIcons.magnet;
+    if (lower.endsWith('.iso') || lower.endsWith('.img') || lower.endsWith('.dmg')) return PhosphorIcons.disc;
+    if (lower.endsWith('.flac') || lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a')) return PhosphorIcons.musicNote;
+    if (lower.endsWith('.pdf') || lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.txt')) return PhosphorIcons.fileText;
+    if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.mov')) return PhosphorIcons.filmStrip;
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.tar')) return PhosphorIcons.archive;
     return PhosphorIcons.file;
   }
 
@@ -75,7 +61,8 @@ class DownloadTaskCard extends StatelessWidget {
     final isActive = task.status == DownloadStatus.downloading ||
         task.status == DownloadStatus.connecting ||
         task.status == DownloadStatus.paused ||
-        task.status == DownloadStatus.queued;
+        task.status == DownloadStatus.queued ||
+        task.status == DownloadStatus.linkExpired;
 
     return Material(
       color: Colors.transparent,
@@ -156,6 +143,12 @@ class DownloadTaskCard extends StatelessWidget {
       final date = task.dateLabel ?? 'Today';
       return '${task.fileSizeFormatted} • $date';
     }
+    if (task.status == DownloadStatus.linkExpired) {
+      return 'Refreshing stream link...';
+    }
+    if (task.status == DownloadStatus.failed) {
+      return task.errorMessage?.isNotEmpty == true ? 'Error: ${task.errorMessage}' : 'Download failed';
+    }
     final dl = task.downloadedSizeFormatted;
     final total = task.fileSizeFormatted;
     final speed = task.speedFormatted;
@@ -166,6 +159,22 @@ class DownloadTaskCard extends StatelessWidget {
   Widget _buildTrailingAction(bool isCompleted, Color textColor, Color subColor) {
     if (isCompleted) {
       return Icon(PhosphorIcons.check, size: 20, color: subColor);
+    }
+    if (task.status == DownloadStatus.linkExpired) {
+      return SizedBox(
+        width: 20, height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2, color: textColor),
+      );
+    }
+    if (task.status == DownloadStatus.failed) {
+      return IconButton(
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        icon: Icon(PhosphorIcons.arrowClockwise, size: 20, color: textColor),
+        tooltip: 'Retry',
+        onPressed: () => DownloadService().resumeDownload(task.id),
+      );
     }
 
     final isDownloading = task.status == DownloadStatus.downloading || task.status == DownloadStatus.connecting;

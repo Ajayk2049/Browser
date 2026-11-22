@@ -71,17 +71,18 @@ class MainActivity : FlutterActivity() {
                     val startNow = call.argument<Boolean>("startNow") ?: true
                     val ref = call.argument<String>("referer")
                     val audioUrl = call.argument<String>("audioUrl")
+                    val audioBytes = (call.argument<Number>("audioBytes"))?.toLong() ?: 0L
                     val totalBytes = (call.argument<Number>("totalBytes"))?.toLong() ?: -1L
                     if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
                         if (downloadService != null) {
-                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl)
+                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes)
                         } else {
                             CoroutineScope(Dispatchers.Main).launch {
                                 for (i in 0 until 30) {
                                     if (downloadService != null) break
                                     delay(100)
                                 }
-                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl)
+                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes)
                             }
                         }
                         result.success(true)
@@ -140,6 +141,14 @@ class MainActivity : FlutterActivity() {
                 "setSpeedLimit" -> {
                     downloadService?.setSpeedLimit(call.argument<String?>("taskId"), (call.argument<Number>("bytesPerSec") ?: 0L).toLong())
                     result.success(true)
+                }
+                "updateTaskUrls" -> {
+                    val id = call.argument<String>("taskId") ?: ""
+                    val newUrl = call.argument<String>("newUrl") ?: ""
+                    val newAudio = call.argument<String>("newAudioUrl")
+                    if (id.isNotEmpty() && newUrl.isNotEmpty()) {
+                        downloadService?.updateTaskUrls(id, newUrl, newAudio); result.success(true)
+                    } else result.error("INVALID_ARGS", "Missing args", null)
                 }
                 "getTasks" -> result.success(DownloadService.allTasks.values.map { it.toMap() })
                 "shareUrl" -> {

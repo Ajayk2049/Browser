@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:flutter/services.dart';
+import '../../browser/services/youtube_grabber_service.dart';
 import '../models/download_task.dart';
 
 /// Platform channel wrapper providing control and progress streaming
@@ -28,11 +29,60 @@ class DownloadService {
     return _downloadUpdatesStream!;
   }
 
+  final Map<String, int> _refreshCounts = {};
+  final Set<String> _refreshingTasks = {};
+
   void _initLoggingSubscriber() {
     downloadUpdates.listen(
-      (task) => developer.log('[Downloader] ${task.id}: ${task.progressPercentage} | ${task.speedFormatted}', name: 'Downloader'),
+      (task) {
+        if (task.status == DownloadStatus.linkExpired) {
+          _handleLinkExpired(task);
+        } else if (task.status == DownloadStatus.completed || task.status == DownloadStatus.failed) {
+          _refreshCounts.remove(task.id);
+          _refreshingTasks.remove(task.id);
+        }
+        developer.log('[Downloader] ${task.id}: ${task.progressPercentage} | ${task.speedFormatted}', name: 'Downloader');
+      },
       onError: (dynamic error) => developer.log('Error: $error', name: 'Downloader', error: error),
     );
+  }
+
+  Future<void> _handleLinkExpired(DownloadTask task) async {
+    if (_refreshingTasks.contains(task.id)) return;
+    _refreshingTasks.add(task.id);
+    try {
+      final attempts = _refreshCounts[task.id] ?? 0;
+      if (attempts >= 6) {
+        developer.log('[Downloader] Max refreshes (6) exceeded for ${task.id}', name: 'Downloader');
+        await pauseDownload(task.id);
+        return;
+      }
+      _refreshCounts[task.id] = attempts + 1;
+      final videoId = YoutubeGrabberService.extractVideoId(task.url, referer: task.referer, finalUrl: task.finalUrl);
+      if (videoId == null) {
+        developer.log('[Downloader] Could not extract videoId for ${task.id}', name: 'Downloader');
+        await pauseDownload(task.id);
+        return;
+      }
+      final videoItag = Uri.tryParse(task.finalUrl ?? task.url)?.queryParameters['itag'] ?? '137';
+      final audioItag = task.audioUrl != null ? Uri.tryParse(task.audioUrl!)?.queryParameters['itag'] : null;
+
+      developer.log('[Downloader] Refreshing stream URLs for $videoId (itag: $videoItag, attempt: ${attempts + 1}/6)', name: 'Downloader');
+      final refreshed = await YoutubeGrabberService.instance.refreshStreams(
+        videoId: videoId,
+        targetVideoItag: videoItag,
+        targetAudioItag: audioItag,
+      );
+      if (refreshed != null) {
+        await updateTaskUrls(taskId: task.id, newUrl: refreshed.videoUrl, newAudioUrl: refreshed.audioUrl);
+      } else {
+        await pauseDownload(task.id);
+      }
+    } catch (e) {
+      developer.log('[Downloader] Error in link refresh: $e', name: 'Downloader', error: e);
+    } finally {
+      _refreshingTasks.remove(task.id);
+    }
   }
 
   /// Starts a new parallel download or adds it queued/paused.
@@ -45,6 +95,7 @@ class DownloadService {
     String? referer,
     int? totalBytes,
     String? audioUrl,
+    int? audioBytes,
   }) async {
     try {
       final success = await _methodChannel.invokeMethod<bool>('startDownload', {
@@ -56,6 +107,7 @@ class DownloadService {
         'referer': ?referer,
         'totalBytes': ?totalBytes,
         'audioUrl': ?audioUrl,
+        'audioBytes': ?audioBytes,
       });
       return success ?? false;
     } on PlatformException catch (e) {
@@ -143,6 +195,22 @@ class DownloadService {
 
   Future<bool> stopTorrentSeeding(String taskId) async {
     try { return await _methodChannel.invokeMethod<bool>('stopSeeding', {'taskId': taskId}) ?? false; } catch (_) { return false; }
+  }
+
+  Future<bool> updateTaskUrls({
+    required String taskId,
+    required String newUrl,
+    String? newAudioUrl,
+  }) async {
+    try {
+      return await _methodChannel.invokeMethod<bool>('updateTaskUrls', {
+        'taskId': taskId,
+        'newUrl': newUrl,
+        'newAudioUrl': newAudioUrl,
+      }) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<List<DownloadTask>> getActiveTasks() async {

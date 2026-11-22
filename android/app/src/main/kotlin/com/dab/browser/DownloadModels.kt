@@ -8,8 +8,11 @@ enum class DownloadStatus {
     PAUSED,
     COMPLETED,
     FAILED,
-    CANCELED
+    CANCELED,
+    LINK_EXPIRED
 }
+
+class LinkExpiredException(msg: String = "LINK_EXPIRED") : Exception(msg)
 
 data class DownloadSegment(
     val index: Int,
@@ -39,6 +42,7 @@ data class DownloadTask(
     @Volatile var resolvedContentType: String? = null,
     @Volatile var referer: String? = null,
     @Volatile var audioUrl: String? = null,
+    @Volatile var audioBytes: Long = 0L,
     val segments: MutableList<DownloadSegment> = mutableListOf()
 ) {
     val progress: Double
@@ -77,8 +81,16 @@ data class DownloadTask(
             "resolvedContentType" to resolvedContentType,
             "referer" to referer,
             "audioUrl" to audioUrl,
+            "audioBytes" to audioBytes,
             "segmentProgresses" to segmentList
         )
     }
 }
+
+data class MuxResult(
+    val success: Boolean,
+    val reason: String? = null,
+    val videoTracks: Int = 0,
+    val audioTracks: Int = 0
+)
 

@@ -4,19 +4,26 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.util.Log
 import java.io.File
 import java.nio.ByteBuffer
 
-/// Native Android MediaMuxer helper that combines MP4 video and M4A/AAC audio
-/// into a single final MP4 container without re-encoding.
-/// Complies with rules.md §13, §29.2 (< 200 lines).
 object MediaMuxerHelper {
-    fun mux(videoFile: File, audioFile: File, outputFile: File): Boolean {
+    private const val TAG = "MediaMuxer"
+
+    fun mux(videoFile: File, audioFile: File, outputFile: File): MuxResult {
         var videoExtractor: MediaExtractor? = null
         var audioExtractor: MediaExtractor? = null
         var muxer: MediaMuxer? = null
         val tempOutput = File("${outputFile.path}.mux.tmp")
         try {
+            if (!videoFile.exists() || videoFile.length() == 0L) {
+                return MuxResult(false, "Video file missing or empty (${videoFile.length()} bytes)")
+            }
+            if (!audioFile.exists() || audioFile.length() == 0L) {
+                return MuxResult(false, "Audio file missing or empty (${audioFile.length()} bytes)")
+            }
+
             videoExtractor = MediaExtractor().apply { setDataSource(videoFile.path) }
             audioExtractor = MediaExtractor().apply { setDataSource(audioFile.path) }
 
@@ -40,7 +47,12 @@ object MediaMuxerHelper {
                 }
             }
 
-            if (videoTrackIndex < 0 || audioTrackIndex < 0 || videoFormat == null || audioFormat == null) return false
+            if (videoTrackIndex < 0 || videoFormat == null) {
+                return MuxResult(false, "No video track found in ${videoFile.name}")
+            }
+            if (audioTrackIndex < 0 || audioFormat == null) {
+                return MuxResult(false, "No audio track found in ${audioFile.name}")
+            }
             if (tempOutput.exists()) tempOutput.delete()
 
             muxer = MediaMuxer(tempOutput.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -50,24 +62,32 @@ object MediaMuxerHelper {
             val muxerAudio = muxer.addTrack(audioFormat)
             muxer.start()
 
-            val buffer = ByteBuffer.allocate(1024 * 1024)
+            val maxVideoSize = try { videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) } catch (_: Exception) { 1024 * 1024 }
+            val bufferSize = maxOf(maxVideoSize, 4 * 1024 * 1024)
+            val buffer = ByteBuffer.allocate(bufferSize)
             val info = MediaCodec.BufferInfo()
 
+            var firstVideoPts = -1L
             while (true) {
                 info.offset = 0
                 info.size = videoExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
-                info.presentationTimeUs = videoExtractor.sampleTime
+                val sampleTime = videoExtractor.sampleTime
+                if (firstVideoPts < 0) firstVideoPts = sampleTime
+                info.presentationTimeUs = (sampleTime - firstVideoPts).coerceAtLeast(0L)
                 info.flags = videoExtractor.sampleFlags
                 muxer.writeSampleData(muxerVideo, buffer, info)
                 videoExtractor.advance()
             }
 
+            var firstAudioPts = -1L
             while (true) {
                 info.offset = 0
                 info.size = audioExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
-                info.presentationTimeUs = audioExtractor.sampleTime
+                val sampleTime = audioExtractor.sampleTime
+                if (firstAudioPts < 0) firstAudioPts = sampleTime
+                info.presentationTimeUs = (sampleTime - firstAudioPts).coerceAtLeast(0L)
                 info.flags = audioExtractor.sampleFlags
                 muxer.writeSampleData(muxerAudio, buffer, info)
                 audioExtractor.advance()
@@ -77,16 +97,46 @@ object MediaMuxerHelper {
             videoExtractor.release(); videoExtractor = null
             audioExtractor.release(); audioExtractor = null
 
+            val verify = verifyOutput(tempOutput)
+            if (!verify.success) {
+                if (tempOutput.exists()) tempOutput.delete()
+                return verify
+            }
+
             if (outputFile.exists()) outputFile.delete()
-            return tempOutput.renameTo(outputFile)
+            if (!tempOutput.renameTo(outputFile)) {
+                return MuxResult(false, "Failed to rename temp file to ${outputFile.name}")
+            }
+            Log.d(TAG, "Mux successful: ${outputFile.path} (${outputFile.length()} bytes)")
+            return MuxResult(true, videoTracks = verify.videoTracks, audioTracks = verify.audioTracks)
         } catch (e: Exception) {
-            android.util.Log.e("MediaMuxerHelper", "Muxing error: $e")
+            Log.e(TAG, "Muxing error: $e", e)
             try { if (tempOutput.exists()) tempOutput.delete() } catch (_: Exception) {}
-            return false
+            return MuxResult(false, e.message ?: "Muxing failed")
         } finally {
             try { videoExtractor?.release() } catch (_: Exception) {}
             try { audioExtractor?.release() } catch (_: Exception) {}
             try { muxer?.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun verifyOutput(file: File): MuxResult {
+        if (!file.exists() || file.length() == 0L) return MuxResult(false, "Output file empty or missing")
+        var extractor: MediaExtractor? = null
+        try {
+            extractor = MediaExtractor().apply { setDataSource(file.path) }
+            var vCount = 0; var aCount = 0
+            for (i in 0 until extractor.trackCount) {
+                val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/")) vCount++
+                if (mime.startsWith("audio/")) aCount++
+            }
+            if (vCount == 0 || aCount == 0) return MuxResult(false, "Missing tracks in output: v=$vCount, a=$aCount", vCount, aCount)
+            return MuxResult(true, videoTracks = vCount, audioTracks = aCount)
+        } catch (e: Exception) {
+            return MuxResult(false, "Output verification failed: ${e.message}")
+        } finally {
+            try { extractor?.release() } catch (_: Exception) {}
         }
     }
 }

@@ -7,17 +7,15 @@ import '../../downloads/widgets/add_download_dialog.dart';
 
 class DetectedMedia {
   final String url;
-  final String? audioUrl;
-  final String title;
-  final String type; // 'video' | 'audio' | 'stream'
-  final String? quality;
-  final String? size;
-  final String? format;
-  final int? totalBytes;
+  final String? audioUrl, referer, quality, size, format;
+  final int? audioBytes, totalBytes;
+  final String title, type; // 'video' | 'audio' | 'stream'
 
   const DetectedMedia({
     required this.url,
     this.audioUrl,
+    this.audioBytes,
+    this.referer,
     required this.title,
     required this.type,
     this.quality,
@@ -59,7 +57,7 @@ class _MediaGrabberSheetState extends State<MediaGrabberSheet> {
     final qTag = media.quality?.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     final withQ = (qTag != null && qTag.isNotEmpty) ? '$safeTitle ($qTag)' : safeTitle;
     final suggested = withQ.isNotEmpty ? '$withQ.$ext' : null;
-    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, suggestedFileName: suggested, totalBytes: media.totalBytes);
+    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, audioBytes: media.audioBytes, referer: media.referer, suggestedFileName: suggested, totalBytes: media.totalBytes);
   }
 
   IconData _iconForType(String type) => switch (type.toLowerCase()) {
