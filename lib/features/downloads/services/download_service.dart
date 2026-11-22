@@ -44,6 +44,7 @@ class DownloadService {
     bool startNow = true,
     String? referer,
     int? totalBytes,
+    String? audioUrl,
   }) async {
     try {
       final success = await _methodChannel.invokeMethod<bool>('startDownload', {
@@ -54,6 +55,7 @@ class DownloadService {
         'startNow': startNow,
         'referer': ?referer,
         'totalBytes': ?totalBytes,
+        'audioUrl': ?audioUrl,
       });
       return success ?? false;
     } on PlatformException catch (e) {

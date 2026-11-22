@@ -38,6 +38,7 @@ data class DownloadTask(
     @Volatile var finalUrl: String? = null,
     @Volatile var resolvedContentType: String? = null,
     @Volatile var referer: String? = null,
+    @Volatile var audioUrl: String? = null,
     val segments: MutableList<DownloadSegment> = mutableListOf()
 ) {
     val progress: Double
@@ -75,6 +76,7 @@ data class DownloadTask(
             "finalUrl" to finalUrl,
             "resolvedContentType" to resolvedContentType,
             "referer" to referer,
+            "audioUrl" to audioUrl,
             "segmentProgresses" to segmentList
         )
     }

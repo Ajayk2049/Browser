@@ -30,11 +30,17 @@ class YoutubeGrabberService {
       final List<DetectedMedia> items = [];
       final seenVideo = <String>{};
 
-      // 1. Muxed streams (both video + audio in MP4/WebM)
+      // Best M4A/AAC audio stream for muxing
+      final aacStreams = manifest.audioOnly
+          .where((s) => s.container.name.toLowerCase() == 'mp4' || s.codec.mimeType.contains('mp4') || s.codec.mimeType.contains('aac'))
+          .sortByBitrate();
+      final bestAudio = aacStreams.isNotEmpty ? aacStreams.last : null;
+
+      // 1. Muxed streams (both video + audio in MP4, omit WebM)
       for (final stream in manifest.muxed.sortByVideoQuality()) {
+        if (stream.container.name.toLowerCase() != 'mp4') continue;
         final res = stream.videoQualityLabel;
-        final tag = stream.container.name.toUpperCase();
-        final key = '${res}_$tag';
+        final key = '${res}_MP4';
         if (seenVideo.contains(key)) continue;
         seenVideo.add(key);
         final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
@@ -44,36 +50,40 @@ class YoutubeGrabberService {
           quality: res,
           size: '$mb MB',
           totalBytes: stream.size.totalBytes,
-          format: tag,
+          format: 'MP4',
           type: 'video',
         ));
       }
 
-      // 2. Video-only streams (include 1080p, 720p, 480p, etc. if no muxed exists)
-      for (final stream in manifest.videoOnly.sortByVideoQuality()) {
-        final res = stream.videoQualityLabel;
-        final tag = stream.container.name.toUpperCase();
-        final key = '${res}_$tag';
-        if (seenVideo.contains(key)) continue;
-        seenVideo.add(key);
-        final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
-        items.add(DetectedMedia(
-          url: stream.url.toString(),
-          title: video.title.trim(),
-          quality: '$res (Video only)',
-          size: '$mb MB',
-          totalBytes: stream.size.totalBytes,
-          format: tag,
-          type: 'video',
-        ));
+      // 2. Adaptive video streams (1080p, 720p, 480p, etc. MP4 only, paired with audio for native muxing)
+      if (bestAudio != null) {
+        for (final stream in manifest.videoOnly.sortByVideoQuality()) {
+          if (stream.container.name.toLowerCase() != 'mp4') continue;
+          final res = stream.videoQualityLabel;
+          final key = '${res}_MP4';
+          if (seenVideo.contains(key)) continue;
+          seenVideo.add(key);
+          final totalBytes = stream.size.totalBytes + bestAudio.size.totalBytes;
+          final mb = (totalBytes / 1048576).toStringAsFixed(1);
+          items.add(DetectedMedia(
+            url: stream.url.toString(),
+            audioUrl: bestAudio.url.toString(),
+            title: video.title.trim(),
+            quality: res,
+            size: '$mb MB',
+            totalBytes: totalBytes,
+            format: 'MP4',
+            type: 'video',
+          ));
+        }
       }
 
-      // 3. Audio only (MP4/M4A/WebM)
+      // 3. Audio only (MP4 / M4A only, omit WebM)
       final seenAudio = <String>{};
       for (final stream in manifest.audioOnly.sortByBitrate()) {
+        if (stream.container.name.toLowerCase() != 'mp4') continue;
         final kbps = stream.bitrate.kiloBitsPerSecond.round();
-        final tag = stream.container.name.toUpperCase();
-        final key = '${kbps}_$tag';
+        final key = '${kbps}_M4A';
         if (seenAudio.contains(key)) continue;
         seenAudio.add(key);
         final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
@@ -83,7 +93,7 @@ class YoutubeGrabberService {
           quality: '$kbps kbps',
           size: '$mb MB',
           totalBytes: stream.size.totalBytes,
-          format: tag,
+          format: 'M4A',
           type: 'audio',
         ));
       }

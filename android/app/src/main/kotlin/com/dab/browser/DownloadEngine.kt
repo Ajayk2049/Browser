@@ -33,17 +33,8 @@ class DownloadEngine(
             }
         }
     }
-
-    fun pause() {
-        isPaused.set(true); downloadJob?.cancel(); task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L
-        onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
-    }
-
-    fun cancel() {
-        isCanceled.set(true); downloadJob?.cancel(); task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
-        try { val part = File("${task.destinationPath}.part"); if (part.exists()) part.delete() } catch (_: Exception) {}
-        onProgressUpdate(task)
-    }
+    fun pause() { isPaused.set(true); downloadJob?.cancel(); task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L; onSaveSegments?.invoke(task.segments); onProgressUpdate(task) }
+    fun cancel() { isCanceled.set(true); downloadJob?.cancel(); task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L; try { File("${task.destinationPath}.part").delete() } catch (_: Exception) {}; onProgressUpdate(task) }
 
     private suspend fun executeDownload() = withContext(Dispatchers.IO) {
         // 1. Single pre-flight request (resolves final URL, Content-Range size & Content-Type)
@@ -63,17 +54,13 @@ class DownloadEngine(
             }
             onProgressUpdate(task)
 
-            // Intercept HTML error/preview pages (e.g. Drive viewer or expired token page)
             val isHtml = probe.contentType?.contains("text/html") == true
             val isExpectedHtml = task.destinationPath.endsWith(".html", true) || task.destinationPath.endsWith(".htm", true)
-            if (isHtml && !isExpectedHtml) throw Exception("Server returned a webpage instead of a file. The link may have expired or requires login.")
-
+            if (isHtml && !isExpectedHtml) throw Exception("Server returned a webpage instead of a file.")
             if (probe.supportsRanges && task.totalBytes > 0) {
                 partitionSegments(task.totalBytes, task.segmentsCount)
             } else {
-                task.segments.clear()
-                val end = if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE
-                task.segments.add(DownloadSegment(0, 0, end))
+                task.segments.clear(); task.segments.add(DownloadSegment(0, 0, if (task.totalBytes > 0) task.totalBytes - 1 else Long.MAX_VALUE))
             }
         }
 
@@ -107,8 +94,21 @@ class DownloadEngine(
                 val allFinished = task.segments.isNotEmpty() && task.segments.all { it.isFinished }
                 if (allFinished) {
                     synchronized(rafLock) { try { raf.close() } catch (_: Exception) {} }
-                    if (destFile.exists()) destFile.delete()
-                    partFile.renameTo(destFile)
+                    val audio = task.audioUrl
+                    if (!audio.isNullOrBlank()) {
+                        task.status = DownloadStatus.CONNECTING; onProgressUpdate(task)
+                        val audioPart = File("${task.destinationPath}.audio.part")
+                        val audioOk = downloadAudioDirect(audio, audioPart)
+                        if (audioOk && MediaMuxerHelper.mux(partFile, audioPart, destFile)) {
+                            try { partFile.delete(); audioPart.delete() } catch (_: Exception) {}
+                        } else {
+                            if (destFile.exists()) destFile.delete()
+                            partFile.renameTo(destFile)
+                        }
+                    } else {
+                        if (destFile.exists()) destFile.delete()
+                        partFile.renameTo(destFile)
+                    }
                     task.status = DownloadStatus.COMPLETED
                     task.speedBytesPerSec = 0L
                     onProgressUpdate(task)
@@ -121,6 +121,23 @@ class DownloadEngine(
             synchronized(rafLock) { try { raf.close() } catch (_: Exception) {} }
         }
     }
+
+    private fun downloadAudioDirect(audioUrl: String, destFile: File): Boolean = try {
+        val conn = DownloadHttpHelper.openConnection(audioUrl, referer = task.referer)
+        val input = conn.inputStream
+        val output = destFile.outputStream()
+        val buf = ByteArray(32 * 1024)
+        var n: Int
+        while (input.read(buf).also { n = it } != -1) {
+            if (isPaused.get() || isCanceled.get()) break
+            output.write(buf, 0, n)
+        }
+        output.flush()
+        try { input.close() } catch (_: Exception) {}
+        try { output.close() } catch (_: Exception) {}
+        conn.disconnect()
+        true
+    } catch (_: Exception) { false }
 
     private suspend fun downloadSegmentWithRetry(segment: DownloadSegment, raf: RandomAccessFile) {
         var attempts = 0
@@ -197,35 +214,24 @@ class DownloadEngine(
         if (limit <= 0) return
         synchronized(throttleLock) {
             bytesInWindow += bytesRead
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastThrottleTime
+            val now = System.currentTimeMillis(); val elapsed = now - lastThrottleTime
             if (elapsed < 1000 && bytesInWindow >= limit) {
                 val waitMs = 1000 - elapsed
-                if (waitMs > 0) try { Thread.sleep(waitMs) } catch (_: Exception) {}
-                bytesInWindow = 0L
-                lastThrottleTime = System.currentTimeMillis()
-            } else if (elapsed >= 1000) {
-                bytesInWindow = 0L
-                lastThrottleTime = now
-            }
+                if (waitMs > 0) try { Thread.sleep(waitMs) } catch (e: Exception) {}
+                bytesInWindow = 0L; lastThrottleTime = System.currentTimeMillis()
+            } else if (elapsed >= 1000) { bytesInWindow = 0L; lastThrottleTime = now }
         }
     }
 
-    private fun recalculateTotalDownloaded() {
-        task.downloadedBytes = synchronized(task.segments) { task.segments.sumOf { it.downloadedBytes } }
-    }
+    private fun recalculateTotalDownloaded() { task.downloadedBytes = synchronized(task.segments) { task.segments.sumOf { it.downloadedBytes } } }
 
     private suspend fun trackSpeed() {
-        var lastBytes = task.downloadedBytes
-        var lastTime = System.currentTimeMillis()
+        var lastBytes = task.downloadedBytes; var lastTime = System.currentTimeMillis()
         while (true) {
             delay(250)
-            val now = System.currentTimeMillis()
-            val currentBytes = task.downloadedBytes
-            val elapsedSec = (now - lastTime) / 1000.0
+            val now = System.currentTimeMillis(); val currentBytes = task.downloadedBytes; val elapsedSec = (now - lastTime) / 1000.0
             if (elapsedSec > 0) task.speedBytesPerSec = ((currentBytes - lastBytes) / elapsedSec).toLong().coerceAtLeast(0L)
-            lastBytes = currentBytes
-            lastTime = now
+            lastBytes = currentBytes; lastTime = now
             if (task.status == DownloadStatus.DOWNLOADING) onProgressUpdate(task)
         }
     }

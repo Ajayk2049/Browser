@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
@@ -82,13 +83,14 @@ class DownloadService : Service() {
         }
     }
 
-    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L) {
+    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L, audioUrl: String? = null) {
         val isTor = TorrentEngine.isMagnetOrTorrent(url)
         val task = allTasks.getOrPut(taskId) {
-            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes)
+            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl)
         }
         if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer
+        if (audioUrl != null) task.audioUrl = audioUrl
         if (startNow) { db.upsertTask(task); enqueueTask(task) } else { task.status = DownloadStatus.PAUSED; db.upsertTask(task); dispatchProgress(task, isStateChange = true) }
     }
 
@@ -208,44 +210,40 @@ class DownloadService : Service() {
     }
 
     private fun checkAutoStop() {
-        val hasActive = activeEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } ||
-                activeTorrentEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
+        val hasActive = activeEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } || activeTorrentEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
         if (!hasActive && taskQueue.isEmpty() && isForegroundActive) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            notificationManager.cancel(NOTIFICATION_ID)
-            isForegroundActive = false
+            stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false
         }
     }
 
     private fun ensureForegroundStarted() {
         if (!isForegroundActive) {
-            val n = buildNotification("Downloading", "Preparing download...", 0, 0)
-            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, type) else startForeground(NOTIFICATION_ID, n)
-            isForegroundActive = true
+            try {
+                createNotificationChannel()
+                val n = buildNotification("Downloading", "Preparing download...", 0, 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(NOTIFICATION_ID, n)
+                isForegroundActive = true
+            } catch (_: Exception) {}
         }
     }
 
     private fun updateNotification(task: DownloadTask) {
-        if (!isForegroundActive) ensureForegroundStarted()
-        val name = File(task.destinationPath).name
-        val pct = (task.progress * 100).toInt()
-        val mb = String.format("%.2f", task.speedBytesPerSec / (1024.0 * 1024.0))
-        val statusText = if (task.status == DownloadStatus.DOWNLOADING) "$pct% • $mb MB/s" else task.status.name
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(name, statusText, 100, pct))
+        try {
+            if (!isForegroundActive) ensureForegroundStarted()
+            val pct = (task.progress * 100).toInt()
+            val mb = String.format(Locale.US, "%.2f", task.speedBytesPerSec / 1048576.0)
+            val statusText = if (task.status == DownloadStatus.DOWNLOADING) "$pct% • $mb MB/s" else task.status.name
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(File(task.destinationPath).name, statusText, 100, pct))
+        } catch (_: Exception) {}
     }
 
     private fun buildNotification(title: String, text: String, max: Int, progress: Int): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title).setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(max > 0 && progress < max)
-            .setProgress(max, progress, max == 0)
+            .setContentTitle(title).setContentText(text).setSmallIcon(applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_menu_save)
+            .setOngoing(max > 0 && progress < max).setProgress(max, progress, max == 0)
             .setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_LOW).build()
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW))
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notificationManager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "File Downloads", NotificationManager.IMPORTANCE_LOW))
     }
 }

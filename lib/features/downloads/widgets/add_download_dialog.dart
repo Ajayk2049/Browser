@@ -14,12 +14,13 @@ import '../utils/url_metadata_helper.dart';
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
   final String? initialUrl;
+  final String? audioUrl;
   final String? suggestedFileName;
   final int? totalBytes;
-  const AddDownloadDialog({super.key, this.initialUrl, this.suggestedFileName, this.totalBytes});
+  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.suggestedFileName, this.totalBytes});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? suggestedFileName, int? totalBytes}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, suggestedFileName: suggestedFileName, totalBytes: totalBytes));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, String? suggestedFileName, int? totalBytes}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, suggestedFileName: suggestedFileName, totalBytes: totalBytes));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -129,6 +130,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     if (rawUrl.isEmpty) return;
     var fileName = _nameCtrl.text.trim();
     if (fileName.isEmpty) fileName = widget.suggestedFileName ?? UrlMetadataHelper.extractCandidateName(rawUrl);
+    fileName = fileName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    if (fileName.length > 120) fileName = fileName.substring(0, 120).trim();
     final cleanExt = _ext.replaceAll('.', '').trim();
     if (cleanExt.isNotEmpty && !fileName.toLowerCase().endsWith('.${cleanExt.toLowerCase()}')) {
       fileName = '$fileName.$cleanExt';
@@ -140,13 +143,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       url: rawUrl, destinationPath: dest, segmentsCount: 4, startNow: startNow,
       referer: ref.isNotEmpty ? ref : null,
       totalBytes: _resolvedTotalBytes > 0 ? _resolvedTotalBytes : null,
+      audioUrl: widget.audioUrl,
     );
     if (mounted) {
       Navigator.pop(context, ok);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(startNow ? 'Starting: $fileName' : 'Added to list: $fileName'),
-        duration: const Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(startNow ? 'Starting: $fileName' : 'Added to list: $fileName'), duration: const Duration(seconds: 2)));
     }
   }
 

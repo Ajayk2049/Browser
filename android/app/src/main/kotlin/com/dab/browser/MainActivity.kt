@@ -70,17 +70,18 @@ class MainActivity : FlutterActivity() {
                     val segs = call.argument<Int>("segmentsCount") ?: 8
                     val startNow = call.argument<Boolean>("startNow") ?: true
                     val ref = call.argument<String>("referer")
+                    val audioUrl = call.argument<String>("audioUrl")
                     val totalBytes = (call.argument<Number>("totalBytes"))?.toLong() ?: -1L
                     if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
                         if (downloadService != null) {
-                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes)
+                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl)
                         } else {
                             CoroutineScope(Dispatchers.Main).launch {
                                 for (i in 0 until 30) {
                                     if (downloadService != null) break
                                     delay(100)
                                 }
-                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes)
+                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl)
                             }
                         }
                         result.success(true)
