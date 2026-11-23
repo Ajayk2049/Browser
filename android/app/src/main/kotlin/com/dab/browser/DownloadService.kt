@@ -1,6 +1,7 @@
 package com.dab.browser
 
 import android.app.*
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -18,22 +19,16 @@ class DownloadService : Service() {
 
     companion object {
         const val CHANNEL_ID = "downloads_channel"; const val NOTIFICATION_ID = 1001
-        val allTasks = ConcurrentHashMap<String, DownloadTask>()
-        val activeEngines = ConcurrentHashMap<String, DownloadEngine>()
-        val activeTorrentEngines = ConcurrentHashMap<String, TorrentEngine>()
-        val taskQueue = ConcurrentLinkedQueue<String>()
-        val lastEmitTimes = ConcurrentHashMap<String, Long>()
-        val lastDbSaveTimes = ConcurrentHashMap<String, Long>()
+        val allTasks = ConcurrentHashMap<String, DownloadTask>(); val activeEngines = ConcurrentHashMap<String, DownloadEngine>()
+        val activeTorrentEngines = ConcurrentHashMap<String, TorrentEngine>(); val taskQueue = ConcurrentLinkedQueue<String>()
+        val lastEmitTimes = ConcurrentHashMap<String, Long>(); val lastDbSaveTimes = ConcurrentHashMap<String, Long>()
         const val THROTTLE_INTERVAL_MS = 250L; const val DB_SAVE_INTERVAL_MS = 5000L
         var onProgressCallback: ((DownloadTask) -> Unit)? = null
         @Volatile var maxConcurrentDownloads = 3; @Volatile var globalSpeedLimitBytesPerSec = 0L
 
         fun dispatchProgress(task: DownloadTask, isStateChange: Boolean = false, db: DownloadDatabase? = null, onUpdateNotification: ((DownloadTask) -> Unit)? = null) {
-            val now = System.currentTimeMillis()
-            val lastTime = lastEmitTimes[task.id] ?: 0L
-            val isCritical = isStateChange || task.status in listOf(
-                DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.PAUSED, DownloadStatus.CANCELED, DownloadStatus.QUEUED, DownloadStatus.LINK_EXPIRED
-            )
+            val now = System.currentTimeMillis(); val lastTime = lastEmitTimes[task.id] ?: 0L
+            val isCritical = isStateChange || task.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.PAUSED, DownloadStatus.CANCELED, DownloadStatus.QUEUED, DownloadStatus.LINK_EXPIRED, DownloadStatus.CONNECTING)
             if (isCritical || (now - lastTime) >= THROTTLE_INTERVAL_MS) {
                 lastEmitTimes[task.id] = now; onUpdateNotification?.invoke(task); onProgressCallback?.invoke(task)
             }
@@ -72,18 +67,14 @@ class DownloadService : Service() {
 
     private fun loadSavedTasks(database: DownloadDatabase) {
         for (t in database.loadAllTasks()) {
-            if (t.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING, DownloadStatus.QUEUED)) {
-                t.status = DownloadStatus.PAUSED; database.upsertTask(t)
-            }
+            if (t.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING, DownloadStatus.QUEUED)) { t.status = DownloadStatus.PAUSED; database.upsertTask(t) }
             allTasks[t.id] = t
         }
     }
 
     fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L, audioUrl: String? = null, audioBytes: Long = 0L) {
         val isTor = TorrentEngine.isMagnetOrTorrent(url)
-        val task = allTasks.getOrPut(taskId) {
-            DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes)
-        }
+        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes) }
         if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer; if (audioUrl != null) task.audioUrl = audioUrl
         if (audioBytes > 0 && task.audioBytes <= 0) task.audioBytes = audioBytes
@@ -94,13 +85,12 @@ class DownloadService : Service() {
     private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
 
     @Synchronized
-    private fun enqueueTask(task: DownloadTask) {
-        val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } +
-                activeTorrentEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
+    private fun enqueueTask(task: DownloadTask, forceRestart: Boolean = false) {
+        val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } + activeTorrentEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
         val host = getHost(task.finalUrl ?: task.url)
         val hostRunning = if (host.isEmpty()) 0 else activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) && getHost(it.task.finalUrl ?: it.task.url) == host }
         if (running < maxConcurrentDownloads && hostRunning < 2) {
-            launchEngine(task)
+            launchEngine(task, forceRestart = forceRestart)
         } else {
             task.status = DownloadStatus.QUEUED; task.speedBytesPerSec = 0L; if (!taskQueue.contains(task.id)) taskQueue.add(task.id); db.upsertTask(task); dispatchProgress(task, isStateChange = true)
         }
@@ -108,38 +98,53 @@ class DownloadService : Service() {
 
     private var isForegroundActive = false
 
-    private fun launchEngine(task: DownloadTask) {
+    private fun launchEngine(task: DownloadTask, forceRestart: Boolean = false) {
         taskQueue.remove(task.id); ensureForegroundStarted()
         if (task.isTorrent) {
             val tEngine = activeTorrentEngines.getOrPut(task.id) {
                 TorrentEngine(task) { updated ->
                     dispatchProgress(updated, db = db) { updateNotification(it) }
-                    if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) {
-                        processQueue(); checkAutoStop()
-                    }
+                    if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED)) { processQueue(); checkAutoStop() }
                 }
             }
             if (globalSpeedLimitBytesPerSec > 0 && task.speedLimitBytesPerSec == 0L) tEngine.setSpeedLimit(globalSpeedLimitBytesPerSec)
-            tEngine.start()
-            return
+            tEngine.start(); return
         }
+        if (forceRestart) activeEngines.remove(task.id)?.shutdown()
         val engine = activeEngines.getOrPut(task.id) {
             DownloadEngine(task, onSaveSegments = { segs -> db.saveSegments(task.id, segs) }) { updated ->
                 dispatchProgress(updated, db = db) { updateNotification(it) }
                 if (updated.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELED, DownloadStatus.PAUSED, DownloadStatus.LINK_EXPIRED)) {
-                    db.saveSegments(updated.id, updated.segments)
-                    activeEngines.remove(task.id); processQueue(); checkAutoStop()
+                    db.saveSegments(updated.id, updated.segments); activeEngines.remove(task.id); processQueue(); checkAutoStop()
                 }
             }
         }
         if (globalSpeedLimitBytesPerSec > 0 && engine.speedLimitBytesPerSec == 0L) engine.setSpeedLimit(globalSpeedLimitBytesPerSec)
-        engine.start()
+        engine.start(forceRestart = forceRestart)
     }
 
-    fun updateTaskUrls(taskId: String, newUrl: String, newAudioUrl: String?) {
-        val task = allTasks[taskId] ?: return
+    suspend fun updateTaskUrls(taskId: String, newUrl: String, newAudioUrl: String?): Boolean = withContext(Dispatchers.IO) {
+        val task = allTasks[taskId] ?: run { Log.e("DLREFRESH", "updateTaskUrls: task $taskId not found"); return@withContext false }
+        Log.d("DLREFRESH", "updateTaskUrls: entered id=$taskId oldStatus=${task.status}")
+        activeEngines.remove(taskId)?.shutdown()
+        val isYt = newUrl.contains("googlevideo.com") || task.url.contains("googlevideo.com") || task.audioUrl != null
+        if (!isYt) {
+            val probe = DownloadHttpHelper.probeUrl(newUrl, task.referer)
+            Log.d("DLREFRESH", "updateTaskUrls probe id=$taskId len=${probe.contentLength} ranges=${probe.supportsRanges} err=${probe.errorMessage}")
+            val newStreamLen = probe.contentLength
+            if (newStreamLen <= 0 || probe.errorMessage != null) { Log.e("DLREFRESH", "updateTaskUrls: probe rejected link for $taskId (len=$newStreamLen err=${probe.errorMessage})"); return@withContext false }
+            val oldStreamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
+            if (oldStreamLen > 0 && newStreamLen != oldStreamLen) {
+                Log.w("DLREFRESH", "updateTaskUrls: length mismatch ($oldStreamLen vs $newStreamLen), resetting part")
+                try { File("${task.destinationPath}.part").delete(); File("${task.destinationPath}.audio.part").delete() } catch (_: Exception) {}
+                task.downloadedBytes = 0L; task.totalBytes = newStreamLen + task.audioBytes; task.segments.clear()
+                val cnt = if (newStreamLen < 5 * 1024 * 1024) 1 else task.segmentsCount.coerceIn(1, 6); val chunk = newStreamLen / cnt
+                for (i in 0 until cnt) task.segments.add(DownloadSegment(i, i * chunk, if (i == cnt - 1) newStreamLen - 1 else (i + 1) * chunk - 1))
+            }
+        }
         task.url = newUrl; task.finalUrl = newUrl; if (newAudioUrl != null) task.audioUrl = newAudioUrl
-        db.upsertTask(task); enqueueTask(task)
+        task.status = DownloadStatus.CONNECTING; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
+        enqueueTask(task, forceRestart = true); Log.d("DLREFRESH", "updateTaskUrls: finished id=$taskId"); true
     }
 
     @Synchronized
@@ -161,11 +166,7 @@ class DownloadService : Service() {
 
     fun pauseDownload(taskId: String) {
         taskQueue.remove(taskId); activeEngines[taskId]?.pause(); activeTorrentEngines[taskId]?.pause()
-        allTasks[taskId]?.let {
-            if (it.status == DownloadStatus.QUEUED) {
-                it.status = DownloadStatus.PAUSED; db.upsertTask(it); dispatchProgress(it, isStateChange = true)
-            }
-        }
+        allTasks[taskId]?.let { if (it.status == DownloadStatus.QUEUED) { it.status = DownloadStatus.PAUSED; db.upsertTask(it); dispatchProgress(it, isStateChange = true) } }
         processQueue(); checkAutoStop()
     }
 
@@ -179,10 +180,7 @@ class DownloadService : Service() {
         task?.let {
             it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true)
             if (deleteFile && it.destinationPath.isNotEmpty()) {
-                try {
-                    val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively()
-                    val part = File("${it.destinationPath}.part"); if (part.exists()) part.delete()
-                } catch (_: Exception) {}
+                try { val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively(); val p = File("${it.destinationPath}.part"); if (p.exists()) p.delete() } catch (_: Exception) {}
             }
         }
         db.deleteTask(taskId); processQueue(); checkAutoStop()

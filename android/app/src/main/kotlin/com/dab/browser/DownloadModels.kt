@@ -26,7 +26,7 @@ data class DownloadSegment(
 
 data class DownloadTask(
     val id: String,
-    val url: String,
+    @Volatile var url: String,
     @Volatile var destinationPath: String,
     val segmentsCount: Int = 8,
     @Volatile var totalBytes: Long = -1L,

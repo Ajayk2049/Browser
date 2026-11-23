@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 class AppTypography {
   AppTypography._();
 
-  static const _display = 'ClashDisplay';
-  static const _body = 'RobotoFlex'; // Expressive variable font
-  static const _mono = 'GeistMono';
+  static const String? _display = null;
+  static const String? _body = null;
+  static const String _mono = 'monospace';
 
   static const displayXl = TextStyle(
     fontFamily: _display,

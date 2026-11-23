@@ -59,9 +59,12 @@ class HistoryItemTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8.0),
                   child: item.host.isNotEmpty
                       ? Image.network(
-                          'https://www.google.com/s2/favicons?domain=${item.host}&sz=128',
+                          'https://www.google.com/s2/favicons?domain=${item.host}&sz=64',
                           width: 20.0,
                           height: 20.0,
+                          cacheWidth: 36,
+                          cacheHeight: 36,
+                          filterQuality: FilterQuality.low,
                           errorBuilder: (_, _, _) => Text(
                             item.letter,
                             style: TextStyle(

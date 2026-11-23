@@ -29,7 +29,7 @@ class FloatingMediaGrabberButton extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutBack,
       right: 16,
-      bottom: isVisible ? 76 : -80,
+      bottom: isVisible ? 16 : -80,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 250),
         opacity: isVisible ? 1.0 : 0.0,

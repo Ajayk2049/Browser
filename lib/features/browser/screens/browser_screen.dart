@@ -41,6 +41,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final List<DetectedMedia> _detectedMedia = [];
   bool _isPrivateMode = false, _isFindInPageVisible = false;
   late String _activeTabId;
+  String? _lastCheckedVideoId;
   int _tabSequence = 0, _findCurrent = 0, _findTotal = 0;
   String _findQuery = '';
 
@@ -73,6 +74,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
       _activeTab.isLoaded = true;
     });
+    if (!_activeTab.isHome) _checkYouTube(_activeTab.url);
   }
 
   void _persistTabs() => TabPersistenceService.instance.saveTabs([for (final t in _normalTabs) if (!t.isHome) TabPersistenceRecord(id: t.id, url: t.url, title: t.title)]);
@@ -80,8 +82,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   @override
   void dispose() {
-    BookmarksService.instance.removeListener(_syncData);
-    QuickLinksService.instance.removeListener(_syncData);
+    BookmarksService.instance.removeListener(_syncData); QuickLinksService.instance.removeListener(_syncData);
     _urlController.dispose(); super.dispose();
   }
 
@@ -101,12 +102,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (UrlHelper.isDownloadable(resolvedUrl)) { _promptDownload(resolvedUrl); return; }
     if (Uri.tryParse(resolvedUrl) == null) return;
     _activeTab.controller.loadUrl(resolvedUrl);
+    _lastCheckedVideoId = null;
     setState(() { _activeTab..isLoaded = true..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; _detectedMedia.clear(); });
     _checkYouTube(resolvedUrl);
     if (!_isPrivateMode) _persistTabs();
   }
 
   void _loadHome() {
+    _lastCheckedVideoId = null;
     setState(() {
       _activeTab..url = _homeUrl..title = 'Home'..error = null..isLoading = false..canGoForward = false;
       _urlController.text = ''; _detectedMedia.clear();
@@ -119,12 +122,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _selectTab(String id, [bool? isPrivate]) {
     if (_isFindInPageVisible) { _isFindInPageVisible = false; _activeTab.controller.clearFindInPage(); }
     final oldTab = _activeTab;
+    _lastCheckedVideoId = null;
     setState(() {
       if (isPrivate != null) _isPrivateMode = isPrivate;
-      _activeTabId = id;
-      _activeTab.isLoaded = true;
-      _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
-      _detectedMedia.clear();
+      _activeTabId = id; _activeTab.isLoaded = true;
+      _urlController.text = _activeTab.isHome ? '' : _activeTab.url; _detectedMedia.clear();
     });
     if (oldTab.id != _activeTab.id) {
       if (!oldTab.isHome) oldTab.controller.setActive(false);
@@ -135,20 +137,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _newTab([bool? isPrivate]) {
     if (_isFindInPageVisible) { _isFindInPageVisible = false; _activeTab.controller.clearFindInPage(); }
     final oldTab = _activeTab;
+    _lastCheckedVideoId = null;
     setState(() {
       final priv = isPrivate ?? _isPrivateMode;
       _isPrivateMode = priv;
       final pool = priv ? _privateTabs : _normalTabs;
       final existingHome = pool.cast<BrowserTabSession?>().firstWhere((t) => t?.isHome ?? false, orElse: () => null);
-      _activeTabId = (existingHome ?? _createTab(_homeUrl, priv)).id;
-      _urlController.text = ''; _detectedMedia.clear();
+      _activeTabId = (existingHome ?? _createTab(_homeUrl, priv)).id; _urlController.text = ''; _detectedMedia.clear();
     });
-    if (oldTab.id != _activeTab.id && !oldTab.isHome) {
-      oldTab.controller.setActive(false);
-    }
+    if (oldTab.id != _activeTab.id && !oldTab.isHome) oldTab.controller.setActive(false);
   }
 
   void _closeTab(String id, [bool? isPrivate]) {
+    _lastCheckedVideoId = null;
     setState(() {
       final priv = isPrivate ?? _isPrivateMode;
       final pool = priv ? _privateTabs : _normalTabs;
@@ -158,15 +159,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (priv) _notifyPrivateCount();
       if (pool.isEmpty) {
         if (priv) {
-          _isPrivateMode = false;
-          if (_normalTabs.isEmpty) _createTab();
+          _isPrivateMode = false; if (_normalTabs.isEmpty) _createTab();
           _activeTabId = _normalTabs.last.id;
         } else { _activeTabId = _createTab().id; }
       } else if (_activeTabId == id) {
         _activeTabId = pool[idx < pool.length ? idx : pool.length - 1].id;
       }
-      _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
-      _detectedMedia.clear();
+      _urlController.text = _activeTab.isHome ? '' : _activeTab.url; _detectedMedia.clear();
       if (!priv) _persistTabs();
     });
     if (!_activeTab.isHome) _activeTab.controller.setActive(true);
@@ -196,28 +195,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _handleMenuAction(BrowserMenuAction action) {
     if (action == BrowserMenuAction.findInPage) {
-      if (_activeTab.isHome) {
-        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
-      } else { setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; }); }
-    } else if (action == BrowserMenuAction.settings) { context.push('/settings');
-    } else if (action == BrowserMenuAction.downloadManager) { context.push('/downloads');
-    } else if (action == BrowserMenuAction.bookmarks) { _openBookmarks();
-    } else if (action == BrowserMenuAction.history) { _openHistory(); }
+      if (_activeTab.isHome) ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
+      else setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
+    } else if (action == BrowserMenuAction.settings) context.push('/settings');
+    else if (action == BrowserMenuAction.downloadManager) context.push('/downloads');
+    else if (action == BrowserMenuAction.bookmarks) _openBookmarks();
+    else if (action == BrowserMenuAction.history) _openHistory();
   }
 
-  void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab);
-  void _sharePage() => BrowserShortcutHelper.sharePage(_activeTab.url, _activeTab.title);
-  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
-  void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+  void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab); void _sharePage() => BrowserShortcutHelper.sharePage(_activeTab.url, _activeTab.title);
+  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title); void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
   void _handleMediaDetected(String u, String t, String typ) {
     if (YoutubeGrabberService.isYouTubeUrl(_activeTab.url) || _detectedMedia.any((m) => m.url == u)) return;
     setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
   }
-  void _onUrlUpdated(String u) { setState(() { _urlController.text = u; _detectedMedia.clear(); }); _checkYouTube(u); }
+  void _onUrlUpdated(String u) {
+    setState(() => _urlController.text = u);
+    final vid = YoutubeGrabberService.extractVideoId(u);
+    if (vid == _lastCheckedVideoId && _detectedMedia.isNotEmpty) return;
+    _lastCheckedVideoId = vid;
+    if (vid == null) { if (_detectedMedia.isNotEmpty) setState(_detectedMedia.clear); return; }
+    setState(_detectedMedia.clear);
+    _checkYouTube(u);
+  }
   Future<void> _checkYouTube(String u) async {
-    if (!YoutubeGrabberService.isYouTubeUrl(u)) return;
+    final vid = YoutubeGrabberService.extractVideoId(u);
+    if (vid == null && !YoutubeGrabberService.isYouTubeUrl(u)) return;
     final list = await YoutubeGrabberService.instance.extractStreams(u);
-    if (mounted && _activeTab.url == u && list.isNotEmpty) setState(() { for (final i in list) if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i); });
+    if (!mounted || vid != _lastCheckedVideoId) return;
+    if (list.isNotEmpty) setState(() { for (final i in list) if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i); });
   }
 
   @override
@@ -230,8 +236,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return PopScope(
       canPop: !canHandleBack,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (_activeTab.canGoBack) { _activeTab.controller.goBack(); } else if (!_activeTab.isHome) { _loadHome(); }
+        if (!didPop) { if (_activeTab.canGoBack) { _activeTab.controller.goBack(); } else if (!_activeTab.isHome) { _loadHome(); } }
       },
       child: Scaffold(
         backgroundColor: _isPrivateMode ? const Color(0xFF0C0E14) : colorScheme.surface,
@@ -241,12 +246,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
               Column(
                 children: [
                   BrowserAddressBar(
-                    controller: _urlController, onSubmitted: _handleSubmit,
-                    isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
+                    controller: _urlController, onSubmitted: _handleSubmit, isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
                     onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark, onOpenPageInfo: _openPageSecurity,
-                    onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); },
-                    isLoading: _activeTab.isLoading, selectedEngine: _selectedEngine,
-                    onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
+                    onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); }, isLoading: _activeTab.isLoading,
+                    selectedEngine: _selectedEngine, onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
                     isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
                   ),
                   if (_activeTab.isLoading)
@@ -254,14 +257,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   if (_activeTab.error != null)
                     BrowserErrorBanner(message: _activeTab.error ?? '', onRetry: () { setState(() => _activeTab.error = null); _activeTab.controller.reload(); }),
                   Expanded(child: IndexedStack(index: activeIndex, children: [for (final tab in _activeTabs) _buildTabView(tab)])),
-                  if (_isFindInPageVisible)
-                    FindInPageBar(
-                      currentMatch: _findCurrent, totalMatches: _findTotal,
-                      onQueryChanged: (q) { _findQuery = q; _activeTab.controller.findInPage(q, forward: true); },
-                      onNext: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: true) : null,
-                      onPrevious: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: false) : null,
-                      onClose: () { setState(() => _isFindInPageVisible = false); _activeTab.controller.clearFindInPage(); },
-                    ),
+                  if (_isFindInPageVisible) FindInPageBar(
+                    currentMatch: _findCurrent, totalMatches: _findTotal,
+                    onQueryChanged: (q) { _findQuery = q; _activeTab.controller.findInPage(q, forward: true); },
+                    onNext: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: true) : null,
+                    onPrevious: () => _findQuery.isNotEmpty ? _activeTab.controller.findInPage(_findQuery, forward: false) : null,
+                    onClose: () { setState(() => _isFindInPageVisible = false); _activeTab.controller.clearFindInPage(); },
+                  ),
                 ],
               ),
               if (!_activeTab.isHome) FloatingMediaGrabberButton(count: _detectedMedia.length, onTap: _openMediaGrabber),
@@ -280,21 +282,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Widget _buildTabView(BrowserTabSession tab) {
     if (tab.isHome) {
-      if (tab.isPrivate) return PrivateHomeView(onOpenUrl: _handleSubmit);
-      return BrowserHomeView(
+      return tab.isPrivate ? PrivateHomeView(onOpenUrl: _handleSubmit) : BrowserHomeView(
         onOpenUrl: _handleSubmit, onSeeAllBookmarks: _openBookmarks,
         onAddQuickLink: () => BrowserShortcutHelper.openAddQuickLink(context),
         onRemoveQuickLink: (item) => BrowserShortcutHelper.confirmRemoveQuickLink(context, item),
         quickLinks: QuickLinksService.instance.quickLinks, bookmarks: BookmarksService.instance.bookmarks,
       );
     }
-    final isActive = tab.id == _activeTabId;
-    if (isActive) tab.isLoaded = true;
     if (!tab.isLoaded) return const SizedBox.shrink();
-    return BrowserTabViewport(
+    final isActive = tab.id == _activeTabId;
+    return RepaintBoundary(child: BrowserTabViewport(
       key: ValueKey(tab.id), tab: tab, isActive: isActive, onUrlChanged: _onUrlUpdated,
       onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
       onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }), onSync: () => setState(() {}),
-    );
+    ));
   }
 }

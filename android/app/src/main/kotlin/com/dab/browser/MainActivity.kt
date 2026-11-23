@@ -1,6 +1,7 @@
 package com.dab.browser
 
 import android.Manifest
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -143,12 +144,27 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "updateTaskUrls" -> {
+                    val id = call.argument<String>("taskId") ?: ""; val newUrl = call.argument<String>("newUrl") ?: ""; val newAudio = call.argument<String>("newAudioUrl")
+                    val ds = downloadService
+                    if (id.isEmpty() || newUrl.isEmpty()) result.error("INVALID_ARGS", "Missing args", null)
+                    else if (ds == null) { Log.e("DLREFRESH", "updateTaskUrls: downloadService null"); result.error("SERVICE_UNAVAILABLE", "DownloadService not bound", null) }
+                    else {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val ok = ds.updateTaskUrls(id, newUrl, newAudio)
+                            Log.d("DLREFRESH", "MainActivity updateTaskUrls id=$id res=$ok")
+                            withContext(Dispatchers.Main) { result.success(ok) }
+                        }
+                    }
+                }
+                "failDownload" -> {
                     val id = call.argument<String>("taskId") ?: ""
-                    val newUrl = call.argument<String>("newUrl") ?: ""
-                    val newAudio = call.argument<String>("newAudioUrl")
-                    if (id.isNotEmpty() && newUrl.isNotEmpty()) {
-                        downloadService?.updateTaskUrls(id, newUrl, newAudio); result.success(true)
-                    } else result.error("INVALID_ARGS", "Missing args", null)
+                    val reason = call.argument<String>("reason") ?: "Download failed"
+                    DownloadService.allTasks[id]?.let {
+                        it.status = DownloadStatus.FAILED; it.errorMessage = reason
+                        downloadService?.db?.upsertTask(it)
+                        DownloadService.dispatchProgress(it, isStateChange = true)
+                    }
+                    result.success(true)
                 }
                 "getTasks" -> result.success(DownloadService.allTasks.values.map { it.toMap() })
                 "shareUrl" -> {

@@ -71,9 +71,6 @@ class _BrowserTabsSheetState extends State<BrowserTabsSheet> {
           color: bg,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           border: Border(top: BorderSide(color: border)),
-          boxShadow: const [
-            BoxShadow(color: Color(0x1A0F172A), offset: Offset(0, -8), blurRadius: 24),
-          ],
         ),
         child: SafeArea(
           top: false,
@@ -110,7 +107,6 @@ class _BrowserTabsSheetState extends State<BrowserTabsSheet> {
                 child: currentTabs.isEmpty
                     ? _buildEmptyState(isPriv, dark || isPriv)
                     : ListView.separated(
-                        shrinkWrap: true,
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                         itemCount: currentTabs.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),

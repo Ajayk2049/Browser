@@ -167,9 +167,12 @@ class BookmarkItemRow extends StatelessWidget {
               alignment: Alignment.center,
               child: host.isNotEmpty
                   ? Image.network(
-                      'https://www.google.com/s2/favicons?domain=$host&sz=128',
+                      'https://www.google.com/s2/favicons?domain=$host&sz=64',
                       width: 22,
                       height: 22,
+                      cacheWidth: 36,
+                      cacheHeight: 36,
+                      filterQuality: FilterQuality.low,
                       errorBuilder: (_, _, _) => Text(
                         letter,
                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: titleColor),

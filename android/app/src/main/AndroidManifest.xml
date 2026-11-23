@@ -14,7 +14,8 @@
         android:allowBackup="true"
         android:fullBackupContent="true"
         android:enableOnBackInvokedCallback="true"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:largeHeap="true">
 
         <service
             android:name=".DownloadService"

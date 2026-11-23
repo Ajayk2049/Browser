@@ -43,9 +43,12 @@ class TabFavicon extends StatelessWidget {
       alignment: Alignment.center,
       child: host.isNotEmpty && !host.contains('dab.app')
           ? Image.network(
-              'https://www.google.com/s2/favicons?domain=$host&sz=128',
+              'https://www.google.com/s2/favicons?domain=$host&sz=64',
               width: 18,
               height: 18,
+              cacheWidth: 36,
+              cacheHeight: 36,
+              filterQuality: FilterQuality.low,
               errorBuilder: (_, _, _) => Icon(PhosphorIcons.globeSimple, size: 18, color: iconCol),
             )
           : Icon(PhosphorIcons.globeSimple, size: 18, color: iconCol),

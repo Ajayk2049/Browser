@@ -21,13 +21,27 @@ class YoutubeGrabberService {
         !lower.contains('youtube.com/feed');
   }
 
+  static final Map<String, String> knownVideoIds = {};
+  static void recordVideoId(String url, String id) {
+    if (knownVideoIds.length >= 32) knownVideoIds.remove(knownVideoIds.keys.first);
+    knownVideoIds[url] = id;
+  }
+
   static String? extractVideoId(String url, {String? referer, String? finalUrl}) {
+    if (knownVideoIds.containsKey(url)) return knownVideoIds[url];
+    if (finalUrl != null && knownVideoIds.containsKey(finalUrl)) return knownVideoIds[finalUrl];
+    if (referer != null && knownVideoIds.containsKey(referer)) return knownVideoIds[referer];
+
     for (final target in [referer, url, finalUrl]) {
       if (target == null || target.isEmpty) continue;
+      if (target.length == 11 && RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(target)) return target;
       final uri = Uri.tryParse(target);
       if (uri == null) continue;
       if (uri.queryParameters.containsKey('v')) return uri.queryParameters['v'];
       if (uri.host.contains('youtu.be') && uri.pathSegments.isNotEmpty) return uri.pathSegments.last;
+      if ((uri.pathSegments.contains('shorts') || uri.pathSegments.contains('embed')) && uri.pathSegments.isNotEmpty) {
+        return uri.pathSegments.last;
+      }
       final idParam = uri.queryParameters['id'];
       if (idParam != null && idParam.isNotEmpty) {
         final stripped = idParam.startsWith('o-') ? idParam.substring(2) : idParam;
@@ -37,6 +51,18 @@ class YoutubeGrabberService {
     return null;
   }
 
+  Future<String?> searchVideoIdByTitle(String title) async {
+    final yt = YoutubeExplode();
+    try {
+      final results = await yt.search.search(title).timeout(const Duration(seconds: 10));
+      return results.firstOrNull?.id.value;
+    } catch (_) {
+      return null;
+    } finally {
+      yt.close();
+    }
+  }
+
   Future<({String videoUrl, String? audioUrl})?> refreshStreams({
     required String videoId,
     required String targetVideoItag,
@@ -44,22 +70,25 @@ class YoutubeGrabberService {
   }) async {
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 15));
       final videoStream = manifest.videoOnly.where((s) => s.tag.toString() == targetVideoItag).firstOrNull ??
           manifest.muxed.where((s) => s.tag.toString() == targetVideoItag).firstOrNull;
       if (videoStream == null) {
-        debugPrint('[YoutubeGrabber] itag $targetVideoItag not found in refreshed manifest');
+        debugPrint('[DLREFRESH] itag $targetVideoItag not found in refreshed manifest');
         return null;
       }
       String? audioUrl;
       if (targetAudioItag != null) {
-        final audioStream = manifest.audioOnly.where((s) => s.tag.toString() == targetAudioItag).firstOrNull ??
-            manifest.audioOnly.sortByBitrate().firstOrNull;
-        audioUrl = audioStream?.url.toString();
+        final audioStream = manifest.audioOnly.where((s) => s.tag.toString() == targetAudioItag).firstOrNull;
+        if (audioStream == null) {
+          debugPrint('[DLREFRESH] audio itag $targetAudioItag not found in refreshed manifest');
+          return null;
+        }
+        audioUrl = audioStream.url.toString();
       }
       return (videoUrl: videoStream.url.toString(), audioUrl: audioUrl);
     } catch (e) {
-      debugPrint('[YoutubeGrabber] Error refreshing streams for $videoId: $e');
+      debugPrint('[DLREFRESH] Error refreshing streams for $videoId: $e');
       return null;
     } finally {
       yt.close();
@@ -67,11 +96,12 @@ class YoutubeGrabberService {
   }
 
   Future<List<DetectedMedia>> extractStreams(String url) async {
-    if (!isYouTubeUrl(url)) return [];
+    final vId = extractVideoId(url);
+    if (vId == null && !isYouTubeUrl(url)) return [];
     final yt = YoutubeExplode();
     try {
-      final video = await yt.videos.get(url);
-      final manifest = await yt.videos.streamsClient.getManifest(video.id);
+      final video = await yt.videos.get(vId ?? url).timeout(const Duration(seconds: 15));
+      final manifest = await yt.videos.streamsClient.getManifest(video.id).timeout(const Duration(seconds: 15));
       final List<DetectedMedia> items = [];
       final seenVideo = <String>{};
 
@@ -79,7 +109,7 @@ class YoutubeGrabberService {
       final aacStreams = manifest.audioOnly
           .where((s) => s.container.name.toLowerCase() == 'mp4' || s.codec.mimeType.contains('mp4') || s.codec.mimeType.contains('aac'))
           .sortByBitrate();
-      final bestAudio = aacStreams.isNotEmpty ? aacStreams.first : null;
+      final bestAudio = aacStreams.isNotEmpty ? aacStreams.last : null;
 
       // 1. Muxed streams (both video + audio in MP4, omit WebM)
       for (final stream in manifest.muxed.sortByVideoQuality()) {
@@ -89,8 +119,10 @@ class YoutubeGrabberService {
         if (seenVideo.contains(key)) continue;
         seenVideo.add(key);
         final mb = stream.size.totalMegaBytes.toStringAsFixed(1);
+        final streamUrl = stream.url.toString();
+        recordVideoId(streamUrl, video.id.value);
         items.add(DetectedMedia(
-          url: stream.url.toString(),
+          url: streamUrl,
           referer: 'https://www.youtube.com/watch?v=${video.id.value}',
           title: video.title.trim(),
           quality: res,
@@ -111,8 +143,11 @@ class YoutubeGrabberService {
           seenVideo.add(key);
           final totalBytes = stream.size.totalBytes + bestAudio.size.totalBytes;
           final mb = (totalBytes / 1048576).toStringAsFixed(1);
+          final streamUrl = stream.url.toString();
+          recordVideoId(streamUrl, video.id.value);
+          if (bestAudio != null) recordVideoId(bestAudio.url.toString(), video.id.value);
           items.add(DetectedMedia(
-            url: stream.url.toString(),
+            url: streamUrl,
             audioUrl: bestAudio.url.toString(),
             audioBytes: bestAudio.size.totalBytes,
             referer: 'https://www.youtube.com/watch?v=${video.id.value}',

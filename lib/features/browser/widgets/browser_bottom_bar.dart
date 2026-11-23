@@ -53,13 +53,6 @@ class BrowserBottomBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: barColor,
         border: Border(top: BorderSide(color: borderColor, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
       ),
       child: SafeArea(
         top: false,

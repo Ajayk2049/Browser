@@ -188,7 +188,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
         );
       },
       onCreatePlatformView: (params) {
-        return PlatformViewsService.initExpensiveAndroidView(
+        return PlatformViewsService.initAndroidView(
           id: params.id,
           viewType: viewType,
           layoutDirection: TextDirection.ltr,

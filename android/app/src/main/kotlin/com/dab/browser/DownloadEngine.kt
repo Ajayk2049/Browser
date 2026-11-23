@@ -13,26 +13,22 @@ class DownloadEngine(
     private val onProgressUpdate: (DownloadTask) -> Unit
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val isPaused = AtomicBoolean(false)
-    private val isCanceled = AtomicBoolean(false)
-    private val rafLock = Any()
-    private val throttleLock = Any()
-    private var downloadJob: Job? = null
+    private val isPaused = AtomicBoolean(false); private val isCanceled = AtomicBoolean(false)
+    private val rafLock = Any(); private val throttleLock = Any(); private var downloadJob: Job? = null
     @Volatile var speedLimitBytesPerSec: Long = task.speedLimitBytesPerSec
-    private var lastThrottleTime = System.currentTimeMillis()
-    private var bytesInWindow = 0L
+    private var lastThrottleTime = System.currentTimeMillis(); private var bytesInWindow = 0L
 
-    fun setSpeedLimit(bytesPerSec: Long) { speedLimitBytesPerSec = bytesPerSec; task.speedLimitBytesPerSec = bytesPerSec }
-    fun start() {
-        if (task.status == DownloadStatus.DOWNLOADING) return
+    fun setSpeedLimit(bytesPerSec: Long) { speedLimitBytesPerSec = bytesPerSec; task.speedLimitBytesPerSec = bytesPerSec }; fun shutdown() { isPaused.set(true); downloadJob?.cancel() }
+    fun start(forceRestart: Boolean = false) {
+        if (!forceRestart && task.status == DownloadStatus.DOWNLOADING) { Log.d("DLREFRESH", "start() early return hit for ${task.id}"); return }
         isPaused.set(false); isCanceled.set(false); task.status = DownloadStatus.CONNECTING; onProgressUpdate(task)
+        Log.d("DLREFRESH", "start() launching job for ${task.id} (force=$forceRestart)")
         downloadJob = scope.launch {
             try { executeDownload() } catch (_: CancellationException) {} catch (e: LinkExpiredException) {
-                task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L
-                onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
+                Log.w("DLREFRESH", "engine: emitted LINK_EXPIRED for ${task.id}")
+                task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L; onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
             } catch (e: Exception) {
-                task.status = DownloadStatus.FAILED
-                val msg = e.message ?: "Download failed"
+                task.status = DownloadStatus.FAILED; val msg = e.message ?: "Download failed"
                 task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired — refresh link" else msg
                 task.speedBytesPerSec = 0L; onProgressUpdate(task)
             }
@@ -49,12 +45,11 @@ class DownloadEngine(
             if (!probe.suggestedFileName.isNullOrBlank()) {
                 val cur = File(task.destinationPath)
                 if (cur.name.startsWith("download_") || cur.name.startsWith("Resolving") || cur.name.endsWith(".bin")) {
-                    val p = cur.parent ?: ""; task.destinationPath = if (p.isNotEmpty()) "$p/${probe.suggestedFileName}" else probe.suggestedFileName!!
+                    val p = cur.parent ?: ""; task.destinationPath = if (p.isNotEmpty()) "$p/${probe.suggestedFileName}" else probe.suggestedFileName
                 }
             }
             onProgressUpdate(task)
-            val isHtml = probe.contentType?.contains("text/html") == true
-            if (isHtml && !task.destinationPath.endsWith(".html", true) && !task.destinationPath.endsWith(".htm", true)) throw Exception("Server returned a webpage instead of a file.")
+            if (probe.contentType?.contains("text/html") == true && !task.destinationPath.endsWith(".html", true) && !task.destinationPath.endsWith(".htm", true)) throw Exception("Server returned a webpage instead of a file.")
             val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else if (probe.contentLength > 0) probe.contentLength else task.totalBytes
             if (probe.supportsRanges && streamLen > 0) partitionSegments(streamLen, task.segmentsCount)
             else { task.segments.clear(); task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE)) }
@@ -78,8 +73,7 @@ class DownloadEngine(
                             task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L
                             onSaveSegments?.invoke(task.segments); onProgressUpdate(task); this@supervisorScope.cancel()
                         } catch (e: Exception) {
-                            task.status = DownloadStatus.FAILED
-                            val msg = e.message ?: "Download failed"
+                            task.status = DownloadStatus.FAILED; val msg = e.message ?: "Download failed"
                             task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired — refresh link" else msg
                             task.speedBytesPerSec = 0L; onProgressUpdate(task)
                         }
@@ -120,19 +114,26 @@ class DownloadEngine(
                 if (probe.contentLength > 0) { task.audioBytes = probe.contentLength; probe.contentLength } else -1L
             }
             var downloaded = destFile.length()
-            val maxSlice = 10 * 1024 * 1024L
+            val isYt = audioUrl.contains("googlevideo.com") || task.url.contains("googlevideo.com")
             val buf = ByteArray(32 * 1024)
             while (!isPaused.get() && !isCanceled.get()) {
                 if (totalAudio > 0 && downloaded >= totalAudio) break
-                val sliceEnd = if (totalAudio > 0) minOf(downloaded + maxSlice - 1, totalAudio - 1) else (downloaded + maxSlice - 1)
-                val range = "bytes=$downloaded-$sliceEnd"
-                val stream = DownloadHttpHelper.openStream(audioUrl, rangeHeader = range, referer = task.referer)
+                val sliceEnd = if (totalAudio > 0) totalAudio - 1 else Long.MAX_VALUE
+                val range = if (sliceEnd != Long.MAX_VALUE) "bytes=$downloaded-$sliceEnd" else if (downloaded > 0) "bytes=$downloaded-" else null
+                val stream = DownloadHttpHelper.openStream(task.audioUrl ?: audioUrl, rangeHeader = range, referer = task.referer)
                 var sliceRead = 0L
                 try {
                     val code = stream.code
-                    if ((code == 403 || code == 410) && isYt) throw LinkExpiredException()
+                    if ((code == 403 || code == 410) && isYt) {
+                        if (downloaded > 0) {
+                            try { synchronized(rafLock) { raf.setLength(0L); raf.seek(0L) } } catch (_: Exception) {}
+                            downloaded = 0L
+                        }
+                        throw LinkExpiredException()
+                    }
+                    val input = stream.byteStream
                     while (!isPaused.get() && !isCanceled.get()) {
-                        val rem = (sliceEnd - (downloaded + sliceRead) + 1).coerceAtLeast(0L)
+                        val rem = if (sliceEnd != Long.MAX_VALUE) (sliceEnd - (downloaded + sliceRead) + 1).coerceAtLeast(0L) else Long.MAX_VALUE
                         if (rem <= 0) break
                         val toRead = if (rem < buf.size) rem.toInt() else buf.size
                         val n = input.read(buf, 0, toRead)
@@ -147,8 +148,7 @@ class DownloadEngine(
             destFile.exists() && destFile.length() > 0 && (totalAudio <= 0 || destFile.length() >= totalAudio)
         } finally { try { raf.close() } catch (_: Exception) {} }
     } catch (e: LinkExpiredException) {
-        task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L
-        onSaveSegments?.invoke(task.segments); onProgressUpdate(task); false
+        task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L; onSaveSegments?.invoke(task.segments); onProgressUpdate(task); false
     } catch (e: Exception) { Log.e("DownloadEngine", "Audio error: $e", e); false }
 
     private suspend fun downloadSegmentWithRetry(segment: DownloadSegment, raf: RandomAccessFile) {
@@ -172,17 +172,25 @@ class DownloadEngine(
 
     private fun downloadSegment(segment: DownloadSegment, raf: RandomAccessFile) {
         val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null || (task.finalUrl?.contains("googlevideo.com") == true)
-        val maxSlice = if (isYt) 10 * 1024 * 1024L else Long.MAX_VALUE
         val buffer = ByteArray(32 * 1024)
         while (!isPaused.get() && !isCanceled.get() && !segment.isFinished) {
             val cur = segment.startByte + segment.downloadedBytes
             if (segment.endByte != Long.MAX_VALUE && cur > segment.endByte) break
-            val sliceEnd = if (segment.endByte != Long.MAX_VALUE) minOf(cur + maxSlice - 1, segment.endByte) else if (maxSlice != Long.MAX_VALUE) cur + maxSlice - 1 else Long.MAX_VALUE
+            val sliceEnd = segment.endByte
             val rangeHeader = if (sliceEnd != Long.MAX_VALUE) "bytes=$cur-$sliceEnd" else if (cur > 0) "bytes=$cur-" else null
+            Log.d("DLREFRESH", "downloadSegment req ${task.id} range=$rangeHeader")
             val stream = DownloadHttpHelper.openStream(task.finalUrl ?: task.url, rangeHeader = rangeHeader, referer = task.referer)
+            Log.d("DLREFRESH", "downloadSegment resp ${task.id} code=${stream.code}")
             try {
                 val code = stream.code
-                if ((code == 403 || code == 410) && isYt) throw LinkExpiredException()
+                if ((code == 403 || code == 410) && isYt) {
+                    if (cur > 0) {
+                        Log.w("DLREFRESH", "YouTube 403 at offset $cur. Truncating .part to 0 to restart.")
+                        synchronized(rafLock) { try { raf.setLength(0L); raf.seek(0L) } catch (_: Exception) {} }
+                        task.downloadedBytes = 0L; segment.downloadedBytes = 0L; recalculateTotalDownloaded()
+                    }
+                    throw LinkExpiredException()
+                }
                 if (rangeHeader != null && code == 200 && segment.index > 0) throw Exception("Server lacks range support")
                 if (!DownloadHttpHelper.validateRangeResponse(stream, cur, rangeHeader != null)) {
                     val r = stream.header("Retry-After")
@@ -218,31 +226,22 @@ class DownloadEngine(
     }
 
     private fun recalculateTotalDownloaded() {
-        val videoDone = synchronized(task.segments) { task.segments.sumOf { it.downloadedBytes } }
-        val audioDone = if (task.audioUrl != null) (task.downloadedBytes - videoDone).coerceAtLeast(0L) else 0L
-        task.downloadedBytes = videoDone + audioDone
+        val v = synchronized(task.segments) { task.segments.sumOf { it.downloadedBytes } }
+        task.downloadedBytes = v + if (task.audioUrl != null) (task.downloadedBytes - v).coerceAtLeast(0L) else 0L
     }
 
     private suspend fun trackSpeed() {
         var lastBytes = task.downloadedBytes; var lastTime = System.currentTimeMillis()
         while (true) {
-            delay(250)
-            val now = System.currentTimeMillis(); val currentBytes = task.downloadedBytes; val elapsedSec = (now - lastTime) / 1000.0
-            if (elapsedSec > 0) task.speedBytesPerSec = ((currentBytes - lastBytes) / elapsedSec).toLong().coerceAtLeast(0L)
-            lastBytes = currentBytes; lastTime = now
-            if (task.status == DownloadStatus.DOWNLOADING) onProgressUpdate(task)
+            delay(250); val now = System.currentTimeMillis(); val cur = task.downloadedBytes; val el = (now - lastTime) / 1000.0
+            if (el > 0) task.speedBytesPerSec = ((cur - lastBytes) / el).toLong().coerceAtLeast(0L)
+            lastBytes = cur; lastTime = now; if (task.status == DownloadStatus.DOWNLOADING) onProgressUpdate(task)
         }
     }
 
     private fun partitionSegments(total: Long, count: Int) {
-        task.segments.clear()
-        val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null
-        val effectiveCount = if (isYt || total < 5 * 1024 * 1024) 1 else count.coerceIn(1, 6)
-        val chunkSize = total / effectiveCount
-        for (i in 0 until effectiveCount) {
-            val start = i * chunkSize
-            val end = if (i == effectiveCount - 1) total - 1 else (start + chunkSize - 1)
-            task.segments.add(DownloadSegment(i, start, end))
-        }
+        task.segments.clear(); val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null
+        val cnt = if (isYt || total < 5 * 1024 * 1024) 1 else count.coerceIn(1, 6); val chunk = total / cnt
+        for (i in 0 until cnt) task.segments.add(DownloadSegment(i, i * chunk, if (i == cnt - 1) total - 1 else ((i + 1) * chunk - 1)))
     }
 }

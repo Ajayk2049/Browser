@@ -46,6 +46,7 @@ class StreamResponse(
 object DownloadHttpHelper {
     private const val TAG = "DownloadHttp"
     const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    const val ANDROID_YT_USER_AGENT = "com.google.android.youtube/19.29.37 (Linux; U; Android 14; en_US) gzip"
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -67,6 +68,7 @@ object DownloadHttpHelper {
         for (hop in 0 until 8) {
             val host = try { URL(current).host } catch (_: Exception) { "" }
             val isYt = host.contains("googlevideo.com")
+            val ua = if (isYt && current.contains("c=ANDROID")) ANDROID_YT_USER_AGENT else USER_AGENT
             val ref = when {
                 isYt || referer?.contains("googlevideo.com") == true -> null
                 !referer.isNullOrBlank() -> referer
@@ -77,14 +79,16 @@ object DownloadHttpHelper {
             val reqBuilder = Request.Builder()
                 .url(current)
                 .method(method, null)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", ua)
                 .header("Accept", "*/*")
             if (ref != null) reqBuilder.header("Referer", ref)
             if (rangeHeader != null) reqBuilder.header("Range", rangeHeader)
 
             val response = client.newCall(reqBuilder.build()).execute()
             val code = response.code
-            Log.d(TAG, "Hop $hop: $host -> HTTP $code (Range: $rangeHeader)")
+            val itag = if (isYt) current.substringAfter("itag=", "").substringBefore("&") else ""
+            val itagStr = if (itag.isNotEmpty()) " (itag=$itag)" else ""
+            Log.d(TAG, "Hop $hop: $host$itagStr -> HTTP $code (Range: $rangeHeader)")
 
             if (code in 300..399) {
                 val loc = response.header("Location") ?: break
@@ -136,7 +140,7 @@ object DownloadHttpHelper {
     fun validateRangeResponse(resp: StreamResponse, expectedStart: Long, isRangedRequest: Boolean): Boolean {
         val code = resp.code
         if (!isRangedRequest) return code in 200..299
-        if (code != 206) return false
+        if (code != 206) return expectedStart == 0L && code in 200..299
         val cr = resp.header("Content-Range") ?: return true
         val matcher = Pattern.compile("bytes\\s+(\\d+)-(\\d+)/").matcher(cr)
         if (matcher.find()) {

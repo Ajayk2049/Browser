@@ -92,6 +92,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           if (t.status != DownloadStatus.canceled) {
             _tasks[t.id] = t;
             _ensureTaskMetadata(t);
+            if (t.status == DownloadStatus.linkExpired) _service.handleLinkExpired(t);
           }
         }
         _isLoading = false;

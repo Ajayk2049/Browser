@@ -14,6 +14,7 @@ import 'features/settings/services/search_engine_settings_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 24 * 1024 * 1024;
   await OnboardingService.instance.init();
   runApp(
     const ProviderScope(
