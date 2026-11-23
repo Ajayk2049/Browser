@@ -160,17 +160,20 @@ class DownloadTask {
     String? referer,
     List<double>? segmentProgresses,
   }) {
+    final dBytes = downloadedBytes ?? this.downloadedBytes;
+    final tBytes = totalBytes ?? this.totalBytes;
+    final prog = progress ?? (tBytes > 0 ? (dBytes / tBytes).clamp(0.0, 1.0) : this.progress);
     return DownloadTask(
       id: id ?? this.id,
       url: url ?? this.url,
       destinationPath: destinationPath ?? this.destinationPath,
       segmentsCount: segmentsCount ?? this.segmentsCount,
-      totalBytes: totalBytes ?? this.totalBytes,
-      downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      totalBytes: tBytes,
+      downloadedBytes: dBytes,
       speedBytesPerSec: speedBytesPerSec ?? this.speedBytesPerSec,
       speedLimitBytesPerSec: speedLimitBytesPerSec ?? this.speedLimitBytesPerSec,
       audioBytes: audioBytes ?? this.audioBytes,
-      progress: progress ?? this.progress,
+      progress: prog,
       etaSeconds: etaSeconds ?? this.etaSeconds,
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,

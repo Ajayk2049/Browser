@@ -9,6 +9,12 @@ object GeckoRuntimeProvider {
     @Volatile
     private var instance: GeckoRuntime? = null
 
+    /** Gecko default (or overridden) user agent, for download requests that must
+     *  impersonate the browser session (e.g. page-sniffed googlevideo URLs). */
+    @Volatile
+    var defaultUserAgent: String? = null
+        private set
+
     fun get(context: Context): GeckoRuntime {
         return instance ?: synchronized(this) {
             instance ?: createRuntime(context.applicationContext).also { instance = it }
@@ -31,6 +37,10 @@ object GeckoRuntimeProvider {
 
         android.util.Log.i("GeckoPerf", "GeckoRuntime initialized at startup")
 
-        return GeckoRuntime.create(context, settings)
+        val runtime = GeckoRuntime.create(context, settings)
+        // Gecko's default mobile UA (no override is configured in this app).
+        defaultUserAgent = "Mozilla/5.0 (Android ${android.os.Build.VERSION.RELEASE}; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0"
+        DownloadHttpHelper.browserUserAgent = defaultUserAgent
+        return runtime
     }
 }

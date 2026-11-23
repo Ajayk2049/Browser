@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../../browser/services/media_sniffer_service.dart';
 import '../models/web_extension_item.dart';
 
 /// Service managing WebExtensions installation, lifecycle, and curated marketplace.
@@ -17,6 +18,8 @@ class WebExtensionService extends ChangeNotifier {
     if (call.method == 'onExtensionsChanged') {
       debugPrint('WebExtensionService: onExtensionsChanged received');
       await refreshInstalled();
+    } else if (call.method == 'onSniffedMedia') {
+      MediaSnifferService.instance.handleNativeCall(call);
     }
   }
 

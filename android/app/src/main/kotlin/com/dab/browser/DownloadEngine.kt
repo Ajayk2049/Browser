@@ -12,6 +12,12 @@ class DownloadEngine(
     private val onSaveSegments: ((List<DownloadSegment>) -> Unit)? = null,
     private val onProgressUpdate: (DownloadTask) -> Unit
 ) {
+    companion object {
+        // googlevideo 403s open-ended (bytes=N-) and ranges larger than ~16MB.
+        // YouTube's own player fetches bounded slices; we do the same (8MB, safe margin).
+        const val MAX_YT_SLICE_BYTES = 8L * 1024 * 1024
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isPaused = AtomicBoolean(false); private val isCanceled = AtomicBoolean(false)
     private val rafLock = Any(); private val throttleLock = Any(); private var downloadJob: Job? = null
@@ -38,27 +44,27 @@ class DownloadEngine(
     fun cancel() { isCanceled.set(true); downloadJob?.cancel(); task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L; try { File("${task.destinationPath}.part").delete() } catch (_: Exception) {}; onProgressUpdate(task) }
 
     private suspend fun executeDownload() = withContext(Dispatchers.IO) {
+        val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null || (task.finalUrl?.contains("googlevideo.com") == true)
         if (task.totalBytes <= 0 || task.segments.isEmpty() || task.finalUrl == null) {
-            val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer)
-            task.finalUrl = probe.finalUrl; task.resolvedContentType = probe.contentType
-            if (task.totalBytes <= 0 && probe.contentLength > 0) task.totalBytes = probe.contentLength + task.audioBytes
-            if (!probe.suggestedFileName.isNullOrBlank()) {
-                val cur = File(task.destinationPath)
-                if (cur.name.startsWith("download_") || cur.name.startsWith("Resolving") || cur.name.endsWith(".bin")) {
-                    val p = cur.parent ?: ""; task.destinationPath = if (p.isNotEmpty()) "$p/${probe.suggestedFileName}" else probe.suggestedFileName
+            if (!isYt || task.totalBytes <= 0) {
+                val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer)
+                task.finalUrl = probe.finalUrl; task.resolvedContentType = probe.contentType
+                if (task.totalBytes <= 0 && probe.contentLength > 0) task.totalBytes = probe.contentLength + task.audioBytes
+                if (!probe.suggestedFileName.isNullOrBlank()) {
+                    val cur = File(task.destinationPath)
+                    if (cur.name.startsWith("download_") || cur.name.startsWith("Resolving") || cur.name.endsWith(".bin")) { val p = cur.parent ?: ""; task.destinationPath = if (p.isNotEmpty()) "$p/${probe.suggestedFileName}" else probe.suggestedFileName }
                 }
-            }
-            onProgressUpdate(task)
-            if (probe.contentType?.contains("text/html") == true && !task.destinationPath.endsWith(".html", true) && !task.destinationPath.endsWith(".htm", true)) throw Exception("Server returned a webpage instead of a file.")
-            val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else if (probe.contentLength > 0) probe.contentLength else task.totalBytes
-            if (probe.supportsRanges && streamLen > 0) partitionSegments(streamLen, task.segmentsCount)
-            else { task.segments.clear(); task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE)) }
+                onProgressUpdate(task)
+                if (probe.contentType?.contains("text/html") == true && !task.destinationPath.endsWith(".html", true) && !task.destinationPath.endsWith(".htm", true)) throw Exception("Server returned a webpage instead of a file.")
+            } else task.finalUrl = task.url
+            val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
+            if (!isYt && streamLen > 0) partitionSegments(streamLen, task.segmentsCount) else { task.segments.clear(); task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE)) }
         }
 
         val destFile = File(task.destinationPath); val partFile = File("${task.destinationPath}.part"); destFile.parentFile?.mkdirs()
         val raf = RandomAccessFile(partFile, "rw")
         val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
-        if (streamLen > 0 && partFile.length() < streamLen) try { raf.setLength(streamLen) } catch (_: Exception) {}
+        if (!isYt && streamLen > 0 && partFile.length() < streamLen) try { raf.setLength(streamLen) } catch (_: Exception) {}
         task.status = DownloadStatus.DOWNLOADING; onProgressUpdate(task)
 
         val speedTracker = launch { trackSpeed() }; val activeJobs = mutableListOf<Job>()
@@ -114,13 +120,25 @@ class DownloadEngine(
                 if (probe.contentLength > 0) { task.audioBytes = probe.contentLength; probe.contentLength } else -1L
             }
             var downloaded = destFile.length()
+            var zeroProgressSlices = 0
             val isYt = audioUrl.contains("googlevideo.com") || task.url.contains("googlevideo.com")
             val buf = ByteArray(32 * 1024)
             while (!isPaused.get() && !isCanceled.get()) {
                 if (totalAudio > 0 && downloaded >= totalAudio) break
-                val sliceEnd = if (totalAudio > 0) totalAudio - 1 else Long.MAX_VALUE
-                val range = if (sliceEnd != Long.MAX_VALUE) "bytes=$downloaded-$sliceEnd" else if (downloaded > 0) "bytes=$downloaded-" else null
-                val stream = DownloadHttpHelper.openStream(task.audioUrl ?: audioUrl, rangeHeader = range, referer = task.referer)
+                // YouTube: bounded slices only (open-ended ranges get 403).
+                val sliceEnd = if (totalAudio > 0) minOf(totalAudio - 1, downloaded + MAX_YT_SLICE_BYTES - 1) else -1L
+                val audioBase = task.audioUrl ?: audioUrl
+                val webSession = isYt && DownloadHttpHelper.isWebSessionUrl(audioBase)
+                val requestUrl = if (webSession && sliceEnd >= 0) "$audioBase&range=$downloaded-$sliceEnd" else audioBase
+                val range = when {
+                    webSession -> null
+                    sliceEnd >= 0 -> "bytes=$downloaded-$sliceEnd"
+                    downloaded > 0L -> "bytes=$downloaded-"
+                    else -> null
+                }
+                Log.d("DLREFRESH", "downloadAudio req ${task.id} range=$range web=$webSession cur=$downloaded")
+                val stream = DownloadHttpHelper.openStream(requestUrl, rangeHeader = range, referer = task.referer)
+                Log.d("DLREFRESH", "downloadAudio resp ${task.id} code=${stream.code}")
                 var sliceRead = 0L
                 try {
                     val code = stream.code
@@ -133,17 +151,19 @@ class DownloadEngine(
                     }
                     val input = stream.byteStream
                     while (!isPaused.get() && !isCanceled.get()) {
-                        val rem = if (sliceEnd != Long.MAX_VALUE) (sliceEnd - (downloaded + sliceRead) + 1).coerceAtLeast(0L) else Long.MAX_VALUE
-                        if (rem <= 0) break
-                        val toRead = if (rem < buf.size) rem.toInt() else buf.size
-                        val n = input.read(buf, 0, toRead)
+                        val n = input.read(buf, 0, buf.size)
                         if (n == -1) break
                         synchronized(rafLock) { raf.seek(downloaded + sliceRead); raf.write(buf, 0, n) }
                         sliceRead += n; task.downloadedBytes += n; recalculateTotalDownloaded()
                     }
                 } finally { stream.close() }
-                if (sliceRead == 0L) break
-                downloaded += sliceRead
+                if (sliceRead == 0L) {
+                    // Stream ended early with no new data. Retry a few times before giving up
+                    // (YouTube routinely cuts connections; a fresh ranged request resumes fine).
+                    zeroProgressSlices++
+                    try { Thread.sleep(500L * zeroProgressSlices) } catch (_: Exception) {}
+                    if (zeroProgressSlices >= 5) break
+                } else { zeroProgressSlices = 0; downloaded += sliceRead }
             }
             destFile.exists() && destFile.length() > 0 && (totalAudio <= 0 || destFile.length() >= totalAudio)
         } finally { try { raf.close() } catch (_: Exception) {} }
@@ -173,13 +193,27 @@ class DownloadEngine(
     private fun downloadSegment(segment: DownloadSegment, raf: RandomAccessFile) {
         val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null || (task.finalUrl?.contains("googlevideo.com") == true)
         val buffer = ByteArray(32 * 1024)
+        var zeroProgressSlices = 0
         while (!isPaused.get() && !isCanceled.get() && !segment.isFinished) {
             val cur = segment.startByte + segment.downloadedBytes
             if (segment.endByte != Long.MAX_VALUE && cur > segment.endByte) break
-            val sliceEnd = segment.endByte
-            val rangeHeader = if (sliceEnd != Long.MAX_VALUE) "bytes=$cur-$sliceEnd" else if (cur > 0) "bytes=$cur-" else null
-            Log.d("DLREFRESH", "downloadSegment req ${task.id} range=$rangeHeader")
-            val stream = DownloadHttpHelper.openStream(task.finalUrl ?: task.url, rangeHeader = rangeHeader, referer = task.referer)
+            // YouTube: bounded slices only (open-ended/large ranges get 403).
+            val sliceEnd = if (isYt && segment.endByte != Long.MAX_VALUE) {
+                minOf(segment.endByte, cur + MAX_YT_SLICE_BYTES - 1)
+            } else segment.endByte
+            val baseUrl = task.finalUrl ?: task.url
+            val webSession = isYt && DownloadHttpHelper.isWebSessionUrl(baseUrl)
+            val requestUrl = if (webSession && segment.endByte != Long.MAX_VALUE) {
+                "$baseUrl&range=$cur-$sliceEnd"
+            } else baseUrl
+            val rangeHeader = when {
+                webSession -> null // range passed as URL param, like the player
+                isYt -> if (segment.endByte == Long.MAX_VALUE) null else "bytes=$cur-$sliceEnd"
+                else -> if (sliceEnd != Long.MAX_VALUE) "bytes=$cur-$sliceEnd" else if (cur > 0) "bytes=$cur-" else null
+            }
+            val sliceStartBytes = segment.downloadedBytes
+            Log.d("DLREFRESH", "downloadSegment req ${task.id} range=$rangeHeader web=$webSession (isYt=$isYt cur=$cur)")
+            val stream = DownloadHttpHelper.openStream(requestUrl, rangeHeader = rangeHeader, referer = task.referer)
             Log.d("DLREFRESH", "downloadSegment resp ${task.id} code=${stream.code}")
             try {
                 val code = stream.code
@@ -202,12 +236,27 @@ class DownloadEngine(
                     if (rem <= 0) break
                     val toRead = if (rem < buffer.size) rem.toInt() else buffer.size
                     val bytesRead = input.read(buffer, 0, toRead)
-                    if (bytesRead == -1) break
+                    if (bytesRead == -1) {
+                        // Stream ended early (YouTube cuts connections routinely).
+                        // Do NOT fake-finish: only mark finished if we truly reached the end.
+                        if (segment.startByte + segment.downloadedBytes >= segment.endByte) {
+                            segment.downloadedBytes = segment.totalBytes
+                        }
+                        break
+                    }
                     throttleBandwidth(bytesRead)
                     synchronized(rafLock) { raf.seek(segment.startByte + segment.downloadedBytes); raf.write(buffer, 0, bytesRead) }
                     segment.downloadedBytes += bytesRead; recalculateTotalDownloaded()
                 }
             } finally { stream.close() }
+            // Slice ended. Track zero-progress retries to avoid an infinite resume loop.
+            if (segment.downloadedBytes == sliceStartBytes) { zeroProgressSlices++; try { Thread.sleep(500L * zeroProgressSlices) } catch (_: Exception) {} } else zeroProgressSlices = 0
+            if (zeroProgressSlices >= 5) {
+                if (segment.downloadedBytes > 0) {
+                    // Fall back to treating the segment as done so mux can still be attempted.
+                    segment.downloadedBytes = segment.totalBytes
+                } else throw Exception("Stream ended prematurely with no data (HTTP stream repeatedly empty)")
+            }
         }
     }
 

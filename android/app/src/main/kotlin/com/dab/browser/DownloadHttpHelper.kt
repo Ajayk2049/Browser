@@ -46,7 +46,21 @@ class StreamResponse(
 object DownloadHttpHelper {
     private const val TAG = "DownloadHttp"
     const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    const val ANDROID_YT_USER_AGENT = "com.google.android.youtube/19.29.37 (Linux; U; Android 14; en_US) gzip"
+    // Must match the InnerTube client that minted the URL — googlevideo 403s mismatches.
+    const val ANDROID_YT_USER_AGENT = "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip"
+    const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12; eureka-user 4.32.20 Build/SQ3D.220605.009.A1) gzip"
+    const val TVHTML5_USER_AGENT = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version,gzip(gfe)"
+    const val IOS_YT_USER_AGENT = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+
+    /** Set by GeckoRuntimeProvider: the browser's real UA. Web-session URLs
+     *  (sniffed from the page's own player) must be fetched with this. */
+    @Volatile var browserUserAgent: String? = null
+
+    /** True when the URL comes from the browser's own player session (sniffed
+     *  from the page). These must be sliced with a range= URL param like the
+     *  player does; Range headers/open-ended requests get 403. */
+    fun isWebSessionUrl(url: String): Boolean =
+        url.contains("c=MWEB") || url.contains("c=WEB") || url.contains("pot=")
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -68,7 +82,17 @@ object DownloadHttpHelper {
         for (hop in 0 until 8) {
             val host = try { URL(current).host } catch (_: Exception) { "" }
             val isYt = host.contains("googlevideo.com")
-            val ua = if (isYt && current.contains("c=ANDROID")) ANDROID_YT_USER_AGENT else USER_AGENT
+            // Pick the UA of the InnerTube client that minted this URL (its c= param).
+            // Order matters: c=ANDROID_VR also contains c=ANDROID.
+            val ua = when {
+                current.contains("c=ANDROID_VR") -> ANDROID_VR_USER_AGENT
+                isYt && current.contains("c=ANDROID") -> ANDROID_YT_USER_AGENT
+                current.contains("c=TVHTML5") -> TVHTML5_USER_AGENT
+                current.contains("c=IOS") -> IOS_YT_USER_AGENT
+                current.contains("c=WEB") -> browserUserAgent ?: USER_AGENT
+                isYt -> ANDROID_YT_USER_AGENT
+                else -> USER_AGENT
+            }
             val ref = when {
                 isYt || referer?.contains("googlevideo.com") == true -> null
                 !referer.isNullOrBlank() -> referer
@@ -81,6 +105,7 @@ object DownloadHttpHelper {
                 .method(method, null)
                 .header("User-Agent", ua)
                 .header("Accept", "*/*")
+                .header("Accept-Encoding", "identity")
             if (ref != null) reqBuilder.header("Referer", ref)
             if (rangeHeader != null) reqBuilder.header("Range", rangeHeader)
 
@@ -104,7 +129,9 @@ object DownloadHttpHelper {
     }
 
     fun probeUrl(urlStr: String, referer: String? = null): ProbeResult = try {
-        val stream = openStream(urlStr, rangeHeader = "bytes=0-0", referer = referer, method = "GET")
+        val webSession = isWebSessionUrl(urlStr)
+        val target = if (webSession) "${urlStr}&range=0-0" else urlStr
+        val stream = openStream(target, rangeHeader = if (webSession) null else "bytes=0-0", referer = referer, method = "GET")
         stream.use { s ->
             val finalUrl = s.finalUrl
             val cType = s.header("Content-Type")?.lowercase(Locale.ROOT)

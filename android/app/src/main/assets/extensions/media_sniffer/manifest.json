@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "DAB Media Sniffer",
+  "description": "Captures media stream URLs observed by the browser so the built-in download manager can offer them.",
+  "version": "1.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "media-sniffer@dab.browser",
+      "strict_min_version": "112.0"
+    }
+  },
+  "permissions": [
+    "webRequest",
+    "*://*.googlevideo.com/*",
+    "*://*.youtube.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  }
+}

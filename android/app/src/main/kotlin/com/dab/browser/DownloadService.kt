@@ -73,8 +73,9 @@ class DownloadService : Service() {
     }
 
     fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L, audioUrl: String? = null, audioBytes: Long = 0L) {
-        val isTor = TorrentEngine.isMagnetOrTorrent(url)
-        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, segmentsCount, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes) }
+        val isTor = TorrentEngine.isMagnetOrTorrent(url); val isYt = url.contains("googlevideo.com") || audioUrl != null
+        val finalSegs = if (isYt) 1 else segmentsCount
+        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, finalSegs, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes) }
         if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer; if (audioUrl != null) task.audioUrl = audioUrl
         if (audioBytes > 0 && task.audioBytes <= 0) task.audioBytes = audioBytes
@@ -141,6 +142,9 @@ class DownloadService : Service() {
                 val cnt = if (newStreamLen < 5 * 1024 * 1024) 1 else task.segmentsCount.coerceIn(1, 6); val chunk = newStreamLen / cnt
                 for (i in 0 until cnt) task.segments.add(DownloadSegment(i, i * chunk, if (i == cnt - 1) newStreamLen - 1 else (i + 1) * chunk - 1))
             }
+        } else {
+            task.segments.clear(); val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
+            task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE))
         }
         task.url = newUrl; task.finalUrl = newUrl; if (newAudioUrl != null) task.audioUrl = newAudioUrl
         task.status = DownloadStatus.CONNECTING; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
@@ -172,10 +176,8 @@ class DownloadService : Service() {
 
     fun resumeDownload(taskId: String) = allTasks[taskId]?.let { enqueueTask(it) }
     fun cancelDownload(taskId: String) = deleteDownload(taskId, deleteFile = false)
-
     fun deleteDownload(taskId: String, deleteFile: Boolean = false) {
-        taskQueue.remove(taskId); lastEmitTimes.remove(taskId); lastDbSaveTimes.remove(taskId)
-        val task = allTasks.remove(taskId)
+        taskQueue.remove(taskId); lastEmitTimes.remove(taskId); lastDbSaveTimes.remove(taskId); val task = allTasks.remove(taskId)
         activeEngines.remove(taskId)?.cancel(); activeTorrentEngines.remove(taskId)?.cancel()
         task?.let {
             it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true)
@@ -195,17 +197,10 @@ class DownloadService : Service() {
 
     fun resumeAll() = allTasks.values.filter { it.status == DownloadStatus.PAUSED }.forEach { enqueueTask(it) }
     fun setMaxConcurrent(limit: Int) { maxConcurrentDownloads = limit.coerceAtLeast(1); processQueue() }
-
     fun setSpeedLimit(taskId: String?, bytesPerSec: Long) {
         val limit = bytesPerSec.coerceAtLeast(0L)
-        if (taskId != null) {
-            activeEngines[taskId]?.setSpeedLimit(limit); activeTorrentEngines[taskId]?.setSpeedLimit(limit)
-            allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
-        } else {
-            globalSpeedLimitBytesPerSec = limit
-            activeEngines.values.forEach { it.setSpeedLimit(limit) }; activeTorrentEngines.values.forEach { it.setSpeedLimit(limit) }
-            allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) }
-        }
+        if (taskId != null) { activeEngines[taskId]?.setSpeedLimit(limit); activeTorrentEngines[taskId]?.setSpeedLimit(limit); allTasks[taskId]?.let { it.speedLimitBytesPerSec = limit; db.upsertTask(it) } }
+        else { globalSpeedLimitBytesPerSec = limit; activeEngines.values.forEach { it.setSpeedLimit(limit) }; activeTorrentEngines.values.forEach { it.setSpeedLimit(limit) }; allTasks.values.forEach { it.speedLimitBytesPerSec = limit; db.upsertTask(it) } }
     }
 
     private fun checkAutoStop() {
@@ -215,11 +210,17 @@ class DownloadService : Service() {
         }
     }
 
+    fun showCustomNotification(title: String, text: String, max: Int, progress: Int) {
+        try { ensureForegroundStarted(); notificationManager.notify(NOTIFICATION_ID, buildNotification(title, text, max, progress)) } catch (_: Exception) {}
+    }
+    fun stopForegroundCustom() {
+        try { stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false } catch (_: Exception) {}
+    }
+
     private fun ensureForegroundStarted() {
         if (!isForegroundActive) {
             try {
-                createNotificationChannel()
-                val n = buildNotification("Downloading", "Preparing download...", 0, 0)
+                createNotificationChannel(); val n = buildNotification("Downloading", "Preparing download...", 0, 0)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(NOTIFICATION_ID, n)
                 isForegroundActive = true
             } catch (_: Exception) {}

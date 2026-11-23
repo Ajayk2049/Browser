@@ -7,6 +7,7 @@ import '../../settings/services/search_engine_settings_service.dart';
 import '../models/browser_tab.dart';
 import '../models/search_engine.dart';
 import '../services/bookmarks_service.dart';
+import '../services/media_sniffer_service.dart';
 import '../services/quick_links_service.dart';
 import '../services/tab_persistence_service.dart';
 import '../services/youtube_grabber_service.dart';
@@ -58,6 +59,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     BookmarksService.instance.addListener(_syncData);
     QuickLinksService.instance.addListener(_syncData);
     _channel.setMethodCallHandler((call) async { if (call.method == 'closeAllPrivateTabs') _closeAllPrivateTabs(); });
+    MediaSnifferService.instance.stream.listen(_onSniffedMedia);
   }
 
   Future<void> _initAndRestoreSession() async {
@@ -223,7 +225,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (vid == null && !YoutubeGrabberService.isYouTubeUrl(u)) return;
     final list = await YoutubeGrabberService.instance.extractStreams(u);
     if (!mounted || vid != _lastCheckedVideoId) return;
-    if (list.isNotEmpty) setState(() { for (final i in list) if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i); });
+    if (list.isNotEmpty) setState(() {
+      for (final i in list) {
+        // Sniffed (page-session) items win over API-derived ones for the same itag.
+        if (_detectedMedia.any((m) => m.sniffed && m.videoItag == i.videoItag && m.videoId == vid)) continue;
+        if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i);
+      }
+    });
+  }
+
+  /// Stream URLs sniffed from the page's own player traffic arrive here while
+  /// the video is playing. They replace any API-derived items for the same
+  /// itag because these URLs are attested for the current device session.
+  void _onSniffedMedia(SniffedMedia s) {
+    if (!mounted) return;
+    final vid = YoutubeGrabberService.extractVideoId(_activeTab.url);
+    if (vid == null || s.videoId != vid) return;
+    final title = _activeTab.title.isNotEmpty ? _activeTab.title : s.pageUrl;
+    final items = MediaSnifferService.instance.buildItems(vid, title);
+    if (items.isEmpty) return;
+    setState(() {
+      _detectedMedia.removeWhere((m) => m.sniffed && m.videoId == vid);
+      for (final i in items) {
+        _detectedMedia.removeWhere((m) => !m.sniffed && m.videoId == vid && m.videoItag == i.videoItag);
+        if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i);
+      }
+    });
   }
 
   @override

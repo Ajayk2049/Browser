@@ -28,6 +28,7 @@ class ExtensionManager(
 
         Handler(Looper.getMainLooper()).postDelayed({
             ensureGoogleSearchFixer()
+            ensureMediaSniffer()
         }, 1500)
     }
 
@@ -53,6 +54,52 @@ class ExtensionManager(
         runtime.webExtensionController.ensureBuiltIn("resource://android/assets/extensions/google_search_fixer/", gsfId).accept({ ext ->
             notifyExtensionsChanged(); onComplete?.invoke()
         }, { onComplete?.invoke() })
+    }
+
+    /// Bundled extension that observes the page's own googlevideo traffic and
+    /// forwards the (attested, session-bound) stream URLs to Dart. These are
+    /// the only URLs YouTube reliably serves to non-player clients nowadays.
+    private fun ensureMediaSniffer() {
+        val id = "media-sniffer@dab.browser"
+        runtime.webExtensionController.ensureBuiltIn("resource://android/assets/extensions/media_sniffer/", id).accept({ ext ->
+            if (ext == null) return@accept
+            try {
+                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+                    override fun onMessage(
+                        nativeApp: String,
+                        message: Any,
+                        sender: WebExtension.MessageSender
+                    ): GeckoResult<Any>? {
+                        try {
+                            val url: String; val pageUrl: String; val itag: String; val mime: String
+                            when (message) {
+                                is org.json.JSONObject -> {
+                                    url = message.optString("url", "")
+                                    pageUrl = message.optString("pageUrl", "")
+                                    itag = message.optString("itag", "")
+                                    mime = message.optString("mime", "")
+                                }
+                                is Map<*, *> -> {
+                                    url = message["url"] as? String ?: ""
+                                    pageUrl = message["pageUrl"] as? String ?: ""
+                                    itag = message["itag"] as? String ?: ""
+                                    mime = message["mime"] as? String ?: ""
+                                }
+                                else -> return null
+                            }
+                            if (url.isNotEmpty()) {
+                                runOnUiThread {
+                                    channel.invokeMethod("onSniffedMedia", mapOf(
+                                        "url" to url, "pageUrl" to pageUrl, "itag" to itag, "mime" to mime
+                                    ))
+                                }
+                            }
+                        } catch (_: Exception) {}
+                        return null
+                    }
+                }, "dab-media-sniffer")
+            } catch (_: Exception) {}
+        }, { })
     }
 
     private fun logExtensionState(trigger: String) {

@@ -125,24 +125,24 @@ class MainActivity : FlutterActivity() {
                 "pauseDownload" -> { downloadService?.pauseDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
                 "resumeDownload" -> { downloadService?.resumeDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
                 "cancelDownload" -> { downloadService?.cancelDownload(call.argument<String>("taskId") ?: ""); result.success(true) }
-                "deleteDownload" -> {
-                    val taskId = call.argument<String>("taskId") ?: ""
-                    val deleteFile = call.argument<Boolean>("deleteFile") ?: false
-                    downloadService?.deleteDownload(taskId, deleteFile)
-                    result.success(true)
-                }
+                "deleteDownload" -> { downloadService?.deleteDownload(call.argument<String>("taskId") ?: "", call.argument<Boolean>("deleteFile") ?: false); result.success(true) }
                 "pauseAll" -> { downloadService?.pauseAll(); result.success(true) }
                 "resumeAll" -> { downloadService?.resumeAll(); result.success(true) }
-                "scheduleSeeding" -> {
-                    TorrentSeedingWorker.schedule(applicationContext, call.argument<String>("taskId") ?: "", call.argument<Boolean>("wifiOnly") ?: true, call.argument<Boolean>("requiresCharging") ?: true)
-                    result.success(true)
-                }
+                "scheduleSeeding" -> { TorrentSeedingWorker.schedule(applicationContext, call.argument<String>("taskId") ?: "", call.argument<Boolean>("wifiOnly") ?: true, call.argument<Boolean>("requiresCharging") ?: true); result.success(true) }
                 "stopSeeding" -> { TorrentSeedingWorker.stop(applicationContext, call.argument<String>("taskId") ?: ""); result.success(true) }
                 "setMaxConcurrent" -> { downloadService?.setMaxConcurrent(call.argument<Int>("limit") ?: 3); result.success(true) }
-                "setSpeedLimit" -> {
-                    downloadService?.setSpeedLimit(call.argument<String?>("taskId"), (call.argument<Number>("bytesPerSec") ?: 0L).toLong())
+                "setSpeedLimit" -> { downloadService?.setSpeedLimit(call.argument<String?>("taskId"), (call.argument<Number>("bytesPerSec") ?: 0L).toLong()); result.success(true) }
+                "muxMedia" -> {
+                    val v = call.argument<String>("videoPath") ?: ""; val a = call.argument<String>("audioPath") ?: ""; val o = call.argument<String>("outputPath") ?: ""
+                    CoroutineScope(Dispatchers.IO).launch { val res = MediaMuxerHelper.mux(File(v), File(a), File(o)); withContext(Dispatchers.Main) { result.success(res.success) } }
+                }
+                "updateDownloadNotification" -> {
+                    val t = call.argument<String>("title") ?: "Downloading"; val tx = call.argument<String>("text") ?: ""
+                    downloadService?.showCustomNotification(t, tx, call.argument<Int>("max") ?: 100, call.argument<Int>("progress") ?: 0)
                     result.success(true)
                 }
+                "startForegroundDownload" -> { ensureDownloadServiceBound(); downloadService?.showCustomNotification("Downloading", "Starting download...", 100, 0); result.success(true) }
+                "stopForegroundDownload" -> { downloadService?.stopForegroundCustom(); result.success(true) }
                 "updateTaskUrls" -> {
                     val id = call.argument<String>("taskId") ?: ""; val newUrl = call.argument<String>("newUrl") ?: ""; val newAudio = call.argument<String>("newAudioUrl")
                     val ds = downloadService
@@ -157,13 +157,8 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "failDownload" -> {
-                    val id = call.argument<String>("taskId") ?: ""
-                    val reason = call.argument<String>("reason") ?: "Download failed"
-                    DownloadService.allTasks[id]?.let {
-                        it.status = DownloadStatus.FAILED; it.errorMessage = reason
-                        downloadService?.db?.upsertTask(it)
-                        DownloadService.dispatchProgress(it, isStateChange = true)
-                    }
+                    val id = call.argument<String>("taskId") ?: ""; val reason = call.argument<String>("reason") ?: "Download failed"
+                    DownloadService.allTasks[id]?.let { it.status = DownloadStatus.FAILED; it.errorMessage = reason; downloadService?.db?.upsertTask(it); DownloadService.dispatchProgress(it, isStateChange = true) }
                     result.success(true)
                 }
                 "getTasks" -> result.success(DownloadService.allTasks.values.map { it.toMap() })

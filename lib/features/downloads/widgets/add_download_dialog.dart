@@ -13,12 +13,12 @@ import '../utils/url_metadata_helper.dart';
 /// Material 3 monochrome Download dialog matching 1DM+ layout with auto-resolution.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
-  final String? initialUrl, audioUrl, suggestedFileName, referer;
+  final String? initialUrl, audioUrl, suggestedFileName, referer, videoId, videoItag, audioItag;
   final int? totalBytes, audioBytes;
-  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer});
+  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer, this.videoId, this.videoItag, this.audioItag});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer, String? videoId, String? videoItag, String? audioItag}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer, videoId: videoId, videoItag: videoItag, audioItag: audioItag));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -56,8 +56,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     } else if (url.isNotEmpty) {
       _sizeText = isMag ? 'Connecting to trackers to resolve size...' : 'Resolving file info...';
     }
-    _urlCtrl.addListener(_onUrlChanged);
-    _initStorage();
+    _urlCtrl.addListener(_onUrlChanged); _initStorage();
     if (url.isNotEmpty && widget.totalBytes == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _probe(url); });
     }
@@ -144,6 +143,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       totalBytes: _resolvedTotalBytes > 0 ? _resolvedTotalBytes : null,
       audioUrl: widget.audioUrl,
       audioBytes: widget.audioBytes,
+      videoId: widget.videoId,
+      videoItag: widget.videoItag,
+      audioItag: widget.audioItag,
     );
     if (mounted) {
       Navigator.pop(context, ok);
@@ -214,7 +216,6 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
               ]), cs),
               const SizedBox(height: AppSpacing.x2),
               Text(_sizeText, style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant)),
-              const SizedBox(height: 4),
               Text(_storageText, style: AppTypography.bodySm.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w500)),
               const SizedBox(height: AppSpacing.x1),
               Container(
@@ -228,7 +229,6 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                   Icon(PhosphorIcons.folderSimple, size: 18, color: cs.onSurfaceVariant),
                 ]),
               ),
-              const SizedBox(height: AppSpacing.x3),
               Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                 TextButton(onPressed: () => Navigator.pop(context, false), child: Text('CANCEL', style: AppTypography.bodyMd.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))),
                 const SizedBox(width: 4),

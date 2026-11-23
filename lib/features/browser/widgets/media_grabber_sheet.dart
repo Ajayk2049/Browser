@@ -10,6 +10,10 @@ class DetectedMedia {
   final String? audioUrl, referer, quality, size, format;
   final int? audioBytes, totalBytes;
   final String title, type; // 'video' | 'audio' | 'stream'
+  final String? videoId, videoItag, audioItag;
+  /// True when the URL was sniffed from the page's own player traffic
+  /// (trusted session URL, preferred over API-derived ones).
+  final bool sniffed;
 
   const DetectedMedia({
     required this.url,
@@ -22,6 +26,10 @@ class DetectedMedia {
     this.size,
     this.format,
     this.totalBytes,
+    this.videoId,
+    this.videoItag,
+    this.audioItag,
+    this.sniffed = false,
   });
 }
 
@@ -57,7 +65,7 @@ class _MediaGrabberSheetState extends State<MediaGrabberSheet> {
     final qTag = media.quality?.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     final withQ = (qTag != null && qTag.isNotEmpty) ? '$safeTitle ($qTag)' : safeTitle;
     final suggested = withQ.isNotEmpty ? '$withQ.$ext' : null;
-    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, audioBytes: media.audioBytes, referer: media.referer, suggestedFileName: suggested, totalBytes: media.totalBytes);
+    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, audioBytes: media.audioBytes, referer: media.referer, suggestedFileName: suggested, totalBytes: media.totalBytes, videoId: media.videoId, videoItag: media.videoItag, audioItag: media.audioItag);
   }
 
   IconData _iconForType(String type) => switch (type.toLowerCase()) {
