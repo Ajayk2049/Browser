@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import '../../browser/services/youtube_downloader.dart';
 import '../../browser/services/youtube_grabber_service.dart';
 import '../models/download_task.dart';
-import 'yt_dlp_service.dart';
 
 /// Platform channel wrapper providing control and progress streaming
 /// for native Android downloads (YouTube included: fresh stream URLs are
@@ -20,11 +19,6 @@ class DownloadService {
 
   final StreamController<DownloadTask> _taskStreamCtrl = StreamController<DownloadTask>.broadcast();
   final Map<String, _YouTubePending> _ytPending = {};
-  /// Tasks currently owned by the bundled yt-dlp engine (YouTube etc.).
-  final Map<String, DownloadTask> _ytDlpTasks = {};
-  final Map<String, int> _ytDlpLastTick = {};
-  final Map<String, String?> _ytDlpSelectors = {};
-  final Map<String, bool> _ytDlpAudioOnly = {};
 
   DownloadService._internal() {
     _eventChannel.receiveBroadcastStream().listen(
@@ -32,7 +26,6 @@ class DownloadService {
       onError: (dynamic error) => debugPrint('Native stream error: $error'),
     );
     _initLoggingSubscriber();
-    _initYtDlpSubscriber();
   }
 
   Stream<DownloadTask> get downloadUpdates => _taskStreamCtrl.stream;
@@ -51,110 +44,6 @@ class DownloadService {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // yt-dlp engine (YouTube & friends)
-  // ---------------------------------------------------------------------------
-
-  void _initYtDlpSubscriber() {
-    YtDlpService.instance.onProgress.listen((p) {
-      final base = _ytDlpTasks[p.processId];
-      if (base == null) return;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final last = _ytDlpLastTick[p.processId] ?? 0;
-      if (now - last < 300 && p.progress < 100) return; // keep UI churn down
-      _ytDlpLastTick[p.processId] = now;
-      final total = base.totalBytes > 0 ? base.totalBytes : 0;
-      final done = total > 0 ? (total * (p.progress / 100.0)).round() : base.downloadedBytes;
-      final dt = (now - last) / 1000.0;
-      var speed = base.speedBytesPerSec;
-      if (last > 0 && dt > 0.2 && done > base.downloadedBytes) {
-        speed = ((done - base.downloadedBytes) / dt).round();
-      }
-      _emitYtDlp(base,
-          status: DownloadStatus.downloading,
-          progress: (p.progress / 100.0).clamp(0.0, 1.0),
-          downloaded: done, speed: speed, eta: p.etaInSeconds);
-    });
-    YtDlpService.instance.onError.listen((e) {
-      final base = _ytDlpTasks[e.processId];
-      if (base != null) _emitYtDlp(base, status: DownloadStatus.failed, error: e.error);
-    });
-  }
-
-  void _emitYtDlp(
-    DownloadTask base, {
-    DownloadStatus? status,
-    double? progress,
-    int? downloaded,
-    int? speed,
-    int? eta,
-    String? error,
-    String? destinationPath,
-  }) {
-    final t = DownloadTask(
-      id: base.id,
-      url: base.url,
-      destinationPath: destinationPath ?? base.destinationPath,
-      segmentsCount: 1,
-      totalBytes: base.totalBytes,
-      downloadedBytes: downloaded ?? base.downloadedBytes,
-      speedBytesPerSec: speed ?? base.speedBytesPerSec,
-      etaSeconds: eta ?? 0,
-      progress: progress ?? base.progress,
-      status: status ?? base.status,
-      errorMessage: error,
-      referer: base.referer,
-    );
-    _ytDlpTasks[base.id] = t;
-    _taskStreamCtrl.add(t);
-  }
-
-  Future<void> _startYtDlp({
-    required String taskId,
-    required String url,
-    required String destinationPath,
-    required String? formatSelector,
-    required bool audioOnly,
-    required int estBytes,
-  }) async {
-    final base = DownloadTask(
-      id: taskId, url: url, destinationPath: destinationPath, segmentsCount: 1,
-      totalBytes: estBytes, status: DownloadStatus.connecting, referer: url,
-    );
-    _ytDlpTasks[taskId] = base;
-    _ytDlpLastTick.remove(taskId);
-    _taskStreamCtrl.add(base);
-    _log('[YTDLP] $taskId start format=$formatSelector audio=$audioOnly');
-
-    final path = await YtDlpService.instance.download(
-      taskId: taskId, url: url, destinationPath: destinationPath,
-      formatSelector: formatSelector, audioOnly: audioOnly,
-    );
-    final cur = _ytDlpTasks[taskId] ?? base;
-    if (path == null) {
-      _emitYtDlp(cur, status: DownloadStatus.failed, error: 'Download failed (yt-dlp)');
-      _ytDlpTasks.remove(taskId);
-      _ytDlpLastTick.remove(taskId);
-      return;
-    }
-    var size = cur.totalBytes;
-    try {
-      final f = File(path);
-      if (await f.exists()) size = await f.length();
-    } catch (_) {}
-    _emitYtDlp(cur,
-        status: DownloadStatus.completed, progress: 1.0, downloaded: size,
-        speed: 0, destinationPath: path);
-    _ytDlpTasks.remove(taskId);
-    _ytDlpLastTick.remove(taskId);
-    // Persist so the finished download shows up after a restart.
-    try {
-      await _methodChannel.invokeMethod<bool>('registerExternalTask', {
-        'taskId': taskId, 'url': url, 'destinationPath': path, 'totalBytes': size,
-      });
-    } catch (_) {}
-  }
-
   /// Extracts (videoItag, audioItag) from the referer fragment we attach at
   /// task creation ("https://www.youtube.com/watch?v=ID#itag=VI:AI") so that
   /// link-refresh works even after an app restart.
@@ -168,18 +57,22 @@ class DownloadService {
     return (parts[0], parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null);
   }
 
+  /// YouTube serves only ~8 MB per URL for adaptive streams, so a long
+  /// download needs a freshly minted URL every few megabytes. The engine
+  /// signals LINK_EXPIRED when a link is exhausted; we hand it a new one and
+  /// it resumes from the same offset.
   Future<void> _handleLinkExpired(DownloadTask task) async {
     final lastRefresh = _refreshingTasks[task.id];
-    if (lastRefresh != null && DateTime.now().difference(lastRefresh).inSeconds < 10) return;
+    if (lastRefresh != null && DateTime.now().difference(lastRefresh).inSeconds < 3) return;
     _refreshingTasks[task.id] = DateTime.now();
     try {
       final attempts = _refreshCounts[task.id] ?? 0;
-      if (attempts >= 6) { await failDownload(task.id, 'Link expired — max refreshes exceeded'); return; }
+      if (attempts >= 24) { await failDownload(task.id, 'Link expired — max refreshes exceeded'); return; }
       _refreshCounts[task.id] = attempts + 1;
       final videoId = YoutubeGrabberService.extractVideoId(task.url, referer: task.referer, finalUrl: task.finalUrl);
       if (videoId == null) { await failDownload(task.id, 'Link expired — video ID unresolvable'); return; }
       final itags = _parseItagFragment(task.referer);
-      final videoItag = itags?.$1 ?? '137';
+      final videoItag = itags?.$1 ?? '18';
       final audioItag = task.audioUrl != null ? (itags?.$2 ?? '140') : null;
       final refreshed = await YoutubeGrabberService.instance.refreshStreams(
         videoId: videoId, targetVideoItag: videoItag, targetAudioItag: audioItag,
@@ -201,14 +94,13 @@ class DownloadService {
   );
 
   /// Resolves fresh stream URLs in a background isolate and starts the
-  /// native engine with them (native handles ranged download, resume,
+  /// native engine with them (native handles the sequential download, resume,
   /// audio muxing, DB persistence and notifications).
   Future<void> _resolveAndStartNative(String taskId) async {
     final p = _ytPending[taskId];
     if (p == null || p.canceled) return;
 
-    // Sniffed page-session URLs (handed over by the grabber) are already
-    // attested for this device — hand them to the native engine as-is.
+    // Sniffed page-session URLs are already attested for this device.
     if (p.url.contains('googlevideo.com')) {
       var est = p.estBytes;
       if (est <= 0) {
@@ -266,31 +158,9 @@ class DownloadService {
     final vId = videoId ?? YoutubeGrabberService.extractVideoId(url, referer: referer);
     final isYt = vId != null || url.contains('googlevideo.com') || audioUrl != null;
 
-    // YouTube/yt-dlp-supported pages: let the bundled extractor do the work.
-    // It handles signature/poToken churn and merges video+audio with ffmpeg.
-    if (vId != null && YoutubeGrabberService.isYouTubeUrl(url)) {
-      final pending = DownloadTask(
-        id: taskId, url: url, destinationPath: destinationPath, segmentsCount: 1,
-        totalBytes: totalBytes ?? 0, status: DownloadStatus.connecting, referer: referer,
-      );
-      _ytDlpTasks[taskId] = pending;
-      _ytDlpSelectors[taskId] = videoItag;
-      _ytDlpAudioOnly[taskId] = audioOnly;
-      if (startNow) {
-        _taskStreamCtrl.add(pending);
-        unawaited(_startYtDlp(
-          taskId: taskId, url: url, destinationPath: destinationPath,
-          formatSelector: videoItag, audioOnly: audioOnly, estBytes: totalBytes ?? 0,
-        ));
-      } else {
-        _emitYtDlp(pending, status: DownloadStatus.paused);
-      }
-      return true;
-    }
-
     if (isYt && vId != null) {
       final pending = _YouTubePending(
-        vId, videoItag ?? '22', audioItag, destinationPath, url, referer, totalBytes ?? 0, startNow,
+        vId, videoItag ?? '18', audioItag, destinationPath, url, referer, totalBytes ?? 0, startNow,
         providedAudioUrl: audioUrl, providedAudioBytes: audioBytes ?? 0,
       );
       _ytPending[taskId] = pending;
@@ -322,12 +192,6 @@ class DownloadService {
   Future<bool> requestStoragePermission() async => (await _methodChannel.invokeMethod<bool>('requestStoragePermission')) ?? true;
   Future<Map<String, dynamic>?> probeUrl(String url, {String? referer}) async => _methodChannel.invokeMapMethod<String, dynamic>('probeUrl', {'url': url, 'referer': ?referer});
   Future<bool> pauseDownload(String taskId) async {
-    final yt = _ytDlpTasks[taskId];
-    if (yt != null) {
-      await YtDlpService.instance.cancel(taskId);
-      _emitYtDlp(yt, status: DownloadStatus.paused, speed: 0);
-      return true;
-    }
     final p = _ytPending[taskId];
     if (p != null) {
       p.startNow = false;
@@ -337,17 +201,6 @@ class DownloadService {
     return (await _methodChannel.invokeMethod<bool>('pauseDownload', {'taskId': taskId})) ?? false;
   }
   Future<bool> resumeDownload(String taskId) async {
-    final yt = _ytDlpTasks[taskId];
-    if (yt != null && _ytDlpSelectors.containsKey(taskId)) {
-      _emitYtDlp(yt, status: DownloadStatus.connecting, error: null);
-      unawaited(_startYtDlp(
-        taskId: taskId, url: yt.url, destinationPath: yt.destinationPath,
-        formatSelector: _ytDlpSelectors[taskId],
-        audioOnly: _ytDlpAudioOnly[taskId] ?? false,
-        estBytes: yt.totalBytes,
-      ));
-      return true;
-    }
     final p = _ytPending[taskId];
     if (p != null) {
       p.startNow = true;
@@ -358,15 +211,6 @@ class DownloadService {
     return (await _methodChannel.invokeMethod<bool>('resumeDownload', {'taskId': taskId})) ?? false;
   }
   Future<bool> cancelDownload(String taskId) async {
-    final yt = _ytDlpTasks.remove(taskId);
-    if (yt != null) {
-      await YtDlpService.instance.cancel(taskId);
-      _emitYtDlp(yt, status: DownloadStatus.canceled, speed: 0);
-      _ytDlpTasks.remove(taskId);
-      _ytDlpSelectors.remove(taskId);
-      _ytDlpAudioOnly.remove(taskId);
-      return true;
-    }
     final p = _ytPending.remove(taskId);
     if (p != null) {
       p.canceled = true;
@@ -412,10 +256,7 @@ class DownloadService {
   Future<bool> updateTaskUrls({required String taskId, required String newUrl, String? newAudioUrl}) async => (await _methodChannel.invokeMethod<bool>('updateTaskUrls', {'taskId': taskId, 'newUrl': newUrl, 'newAudioUrl': newAudioUrl})) ?? false;
 
   Future<List<DownloadTask>> getActiveTasks() async {
-    final pendingTasks = [
-      ..._ytDlpTasks.values,
-      ..._ytPending.entries.map((e) => _pendingTask(e.value, e.key, e.value.startNow ? DownloadStatus.connecting : DownloadStatus.paused)),
-    ];
+    final pendingTasks = _ytPending.entries.map((e) => _pendingTask(e.value, e.key, e.value.startNow ? DownloadStatus.connecting : DownloadStatus.paused)).toList();
     try {
       final raw = await _methodChannel.invokeMethod<List<dynamic>>('getTasks');
       final nativeList = raw == null ? <DownloadTask>[] : raw.map((dynamic item) => DownloadTask.fromMap(Map<dynamic, dynamic>.from(item as Map))).toList();

@@ -156,8 +156,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                "registerExternalTask" -> {
-                    val id = call.argument<String>("taskId") ?: ""
+                "deleteFileIfExists" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    result.success(
+                        if (path.isEmpty()) true
+                        else runCatching {
+                            val f = java.io.File(path)
+                            !f.exists() || f.delete()
+                        }.getOrDefault(false)
+                    )
+                }
+                "registerExternalTask" -> {                    val id = call.argument<String>("taskId") ?: ""
                     val url = call.argument<String>("url") ?: ""
                     val path = call.argument<String>("destinationPath") ?: ""
                     val bytes = (call.argument<Number>("totalBytes"))?.toLong() ?: 0L

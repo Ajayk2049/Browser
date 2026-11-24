@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../downloads/downloads.dart';
@@ -25,7 +25,7 @@ import '../widgets/page_security_sheet.dart';
 import '../widgets/private_home_view.dart';
 
 /// Pure native GeckoView browser screen with direct delegate control.
-/// Governed by rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 300 lines).
+/// Governed by rules.md Â§13, Â§25.1, Â§25.2, Â§25.7, and Â§29.2 (< 300 lines).
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
 

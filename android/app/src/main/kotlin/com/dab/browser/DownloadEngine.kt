@@ -1,4 +1,4 @@
-package com.dab.browser
+﻿package com.dab.browser
 
 import android.util.Log
 import kotlinx.coroutines.*
@@ -15,8 +15,7 @@ class DownloadEngine(
     companion object {
         // googlevideo 403s open-ended (bytes=N-) and ranges larger than ~16MB.
         // YouTube's own player fetches bounded slices; we do the same (8MB, safe margin).
-        const val MAX_YT_SLICE_BYTES = 8L * 1024 * 1024
-    }
+        }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isPaused = AtomicBoolean(false); private val isCanceled = AtomicBoolean(false)
@@ -35,7 +34,7 @@ class DownloadEngine(
                 task.status = DownloadStatus.LINK_EXPIRED; task.errorMessage = "LINK_EXPIRED"; task.speedBytesPerSec = 0L; onSaveSegments?.invoke(task.segments); onProgressUpdate(task)
             } catch (e: Exception) {
                 task.status = DownloadStatus.FAILED; val msg = e.message ?: "Download failed"
-                task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired — refresh link" else msg
+                task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired â€” refresh link" else msg
                 task.speedBytesPerSec = 0L; onProgressUpdate(task)
             }
         }
@@ -80,7 +79,7 @@ class DownloadEngine(
                             onSaveSegments?.invoke(task.segments); onProgressUpdate(task); this@supervisorScope.cancel()
                         } catch (e: Exception) {
                             task.status = DownloadStatus.FAILED; val msg = e.message ?: "Download failed"
-                            task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired — refresh link" else msg
+                            task.errorMessage = if (msg.contains("403") || msg.contains("410")) "Download link expired â€” refresh link" else msg
                             task.speedBytesPerSec = 0L; onProgressUpdate(task)
                         }
                     })
@@ -123,38 +122,58 @@ class DownloadEngine(
             var zeroProgressSlices = 0
             val isYt = audioUrl.contains("googlevideo.com") || task.url.contains("googlevideo.com")
             val buf = ByteArray(32 * 1024)
+            // Watchdog: googlevideo can leave a response open with no bytes for
+            // minutes. If that happens, close the stream so the read fails and
+            // the loop resumes with an open-ended range.
+            var lastDataAt = System.currentTimeMillis()
+            var activeStream: StreamResponse? = null
+            val watchdog = Thread {
+                try {
+                    while (!isPaused.get() && !isCanceled.get()) {
+                        Thread.sleep(1000)
+                        if (System.currentTimeMillis() - lastDataAt > 20_000) {
+                            Log.w("DLREFRESH", "audio watchdog: 20s without data, reconnecting")
+                            try { activeStream?.close() } catch (_: Exception) {}
+                            return@Thread
+                        }
+                    }
+                } catch (_: InterruptedException) {}
+            }
+            watchdog.isDaemon = true
+            watchdog.start()
             while (!isPaused.get() && !isCanceled.get()) {
                 if (totalAudio > 0 && downloaded >= totalAudio) break
-                // YouTube: bounded slices only (open-ended ranges get 403).
-                val sliceEnd = if (totalAudio > 0) minOf(totalAudio - 1, downloaded + MAX_YT_SLICE_BYTES - 1) else -1L
                 val audioBase = task.audioUrl ?: audioUrl
-                val webSession = isYt && DownloadHttpHelper.isWebSessionUrl(audioBase)
-                val requestUrl = if (webSession && sliceEnd >= 0) "$audioBase&range=$downloaded-$sliceEnd" else audioBase
-                val range = when {
-                    webSession -> null
-                    sliceEnd >= 0 -> "bytes=$downloaded-$sliceEnd"
-                    downloaded > 0L -> "bytes=$downloaded-"
-                    else -> null
-                }
-                Log.d("DLREFRESH", "downloadAudio req ${task.id} range=$range web=$webSession cur=$downloaded")
+                // Same contract as the video stream: one sequential GET, no
+                // Range on a fresh start, open-ended range only when resuming.
+                val requestUrl = audioBase
+                val range = if (downloaded > 0L) "bytes=$downloaded-" else null
+                Log.d("DLREFRESH", "downloadAudio req ${task.id} range=$range single=true cur=$downloaded")
                 val stream = DownloadHttpHelper.openStream(requestUrl, rangeHeader = range, referer = task.referer)
+                activeStream = stream
+                lastDataAt = System.currentTimeMillis()
                 Log.d("DLREFRESH", "downloadAudio resp ${task.id} code=${stream.code}")
                 var sliceRead = 0L
                 try {
                     val code = stream.code
                     if ((code == 403 || code == 410) && isYt) {
-                        if (downloaded > 0) {
-                            try { synchronized(rafLock) { raf.setLength(0L); raf.seek(0L) } } catch (_: Exception) {}
-                            downloaded = 0L
-                        }
+                        // Keep the bytes we have; the refreshed URL resumes here.
+                        Log.w("DLREFRESH", "audio 403 at $downloaded (progress kept)")
                         throw LinkExpiredException()
                     }
                     val input = stream.byteStream
-                    while (!isPaused.get() && !isCanceled.get()) {
-                        val n = input.read(buf, 0, buf.size)
-                        if (n == -1) break
-                        synchronized(rafLock) { raf.seek(downloaded + sliceRead); raf.write(buf, 0, n) }
-                        sliceRead += n; task.downloadedBytes += n; recalculateTotalDownloaded()
+                    try {
+                        while (!isPaused.get() && !isCanceled.get()) {
+                            val n = input.read(buf, 0, buf.size)
+                            if (n == -1) break
+                            lastDataAt = System.currentTimeMillis()
+                            synchronized(rafLock) { raf.seek(downloaded + sliceRead); raf.write(buf, 0, n) }
+                            sliceRead += n; task.downloadedBytes += n; recalculateTotalDownloaded()
+                        }
+                    } catch (io: java.io.IOException) {
+                        // Socket stall / reset: keep the bytes and resume with an
+                        // open-ended range on the next pass (Snaptube behaviour).
+                        Log.w("DLREFRESH", "audio stream cut at ${downloaded + sliceRead} (${io.message})")
                     }
                 } finally { stream.close() }
                 if (sliceRead == 0L) {
@@ -190,6 +209,8 @@ class DownloadEngine(
         }
     }
 
+    /// True when this task downloads YouTube's progressive (muxed) mp4, which
+    /// is served as a plain file: no range parameter, no per-URL 8 MB quota.
     private fun downloadSegment(segment: DownloadSegment, raf: RandomAccessFile) {
         val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null || (task.finalUrl?.contains("googlevideo.com") == true)
         val buffer = ByteArray(32 * 1024)
@@ -197,35 +218,28 @@ class DownloadEngine(
         while (!isPaused.get() && !isCanceled.get() && !segment.isFinished) {
             val cur = segment.startByte + segment.downloadedBytes
             if (segment.endByte != Long.MAX_VALUE && cur > segment.endByte) break
-            // YouTube: bounded slices only (open-ended/large ranges get 403).
-            val sliceEnd = if (isYt && segment.endByte != Long.MAX_VALUE) {
-                minOf(segment.endByte, cur + MAX_YT_SLICE_BYTES - 1)
-            } else segment.endByte
+            // Snaptube's engine contract (SingleThreadBlockDownloadTask):
+            // exactly one request per URL, strictly sequential, no slicing.
+            //  - fresh start: plain GET, no Range header at all
+            //  - resume:      open-ended "bytes=$offset-" only
+            // Closed chunks / sub-chunk loops are what trip the 403 firewall.
+            val sliceEnd = segment.endByte
             val baseUrl = task.finalUrl ?: task.url
-            val webSession = isYt && DownloadHttpHelper.isWebSessionUrl(baseUrl)
-            val requestUrl = if (webSession && segment.endByte != Long.MAX_VALUE) {
-                "$baseUrl&range=$cur-$sliceEnd"
-            } else baseUrl
-            val rangeHeader = when {
-                webSession -> null // range passed as URL param, like the player
-                isYt -> if (segment.endByte == Long.MAX_VALUE) null else "bytes=$cur-$sliceEnd"
-                else -> if (sliceEnd != Long.MAX_VALUE) "bytes=$cur-$sliceEnd" else if (cur > 0) "bytes=$cur-" else null
-            }
+            val requestUrl = baseUrl
+            val rangeHeader = if (cur > 0) "bytes=$cur-" else null
             val sliceStartBytes = segment.downloadedBytes
-            Log.d("DLREFRESH", "downloadSegment req ${task.id} range=$rangeHeader web=$webSession (isYt=$isYt cur=$cur)")
+            Log.d("DLREFRESH", "downloadSegment req ${task.id} range=$rangeHeader single=true (isYt=$isYt cur=$cur)")
             val stream = DownloadHttpHelper.openStream(requestUrl, rangeHeader = rangeHeader, referer = task.referer)
             Log.d("DLREFRESH", "downloadSegment resp ${task.id} code=${stream.code}")
             try {
                 val code = stream.code
                 if ((code == 403 || code == 410) && isYt) {
-                    if (cur > 0) {
-                        Log.w("DLREFRESH", "YouTube 403 at offset $cur. Truncating .part to 0 to restart.")
-                        synchronized(rafLock) { try { raf.setLength(0L); raf.seek(0L) } catch (_: Exception) {} }
-                        task.downloadedBytes = 0L; segment.downloadedBytes = 0L; recalculateTotalDownloaded()
-                    }
+                    // Keep what we already wrote: the refreshed URL continues
+                    // from this offset instead of starting over.
+                    Log.w("DLREFRESH", "YouTube 403 at offset $cur (progress kept). Requesting fresh URL.")
                     throw LinkExpiredException()
                 }
-                if (rangeHeader != null && code == 200 && segment.index > 0) throw Exception("Server lacks range support")
+                if (rangeHeader != null && code == 200) throw Exception("Server lacks range support")
                 if (!DownloadHttpHelper.validateRangeResponse(stream, cur, rangeHeader != null)) {
                     val r = stream.header("Retry-After")
                     throw Exception("HTTP $code ${if (r != null) "Retry-After:$r" else ""}".trim())
@@ -237,9 +251,15 @@ class DownloadEngine(
                     val toRead = if (rem < buffer.size) rem.toInt() else buffer.size
                     val bytesRead = input.read(buffer, 0, toRead)
                     if (bytesRead == -1) {
-                        // Stream ended early (YouTube cuts connections routinely).
-                        // Do NOT fake-finish: only mark finished if we truly reached the end.
-                        if (segment.startByte + segment.downloadedBytes >= segment.endByte) {
+                        // Connection closed by the server (YouTube does this).
+                        // If we are not at EOF the URL is spent: ask for a new
+                        // one and resume from here with an open-ended range.
+                        if (segment.startByte + segment.downloadedBytes < segment.endByte) {
+                            if (isYt && segment.downloadedBytes > sliceStartBytes) {
+                                Log.w("DLREFRESH", "stream cut at $cur/${segment.endByte}, reminting")
+                                throw LinkExpiredException()
+                            }
+                        } else {
                             segment.downloadedBytes = segment.totalBytes
                         }
                         break

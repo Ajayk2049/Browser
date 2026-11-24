@@ -1,7 +1,10 @@
 import 'dart:isolate';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
+import 'yt_dlp_minter.dart';
 
 /// Resolves fresh YouTube stream URLs off the main isolate.
 /// Manifest fetching parses large player JSON — it must never run on the
@@ -56,6 +59,18 @@ class YoutubeDownloader {
   /// Returns [videoUrl, videoBytes, audioUrl?, audioBytes?].
   /// [0] == null when no usable stream exists. Throws after 3 attempts.
   Future<List<String?>> resolveStreams(String videoId, String videoItag, String? audioItag) async {
+    // 1) Attested URLs (pot/n-signed) from the bundled extractor. Platform
+    //    channel, so this must stay on the main isolate.
+    try {
+      final minted = await YtDlpMinter.instance.mint(
+        'https://www.youtube.com/watch?v=$videoId', videoItag, audioItag,
+      );
+      if (minted[0] != null) return minted;
+    } catch (e) {
+      debugPrint('[MINT] resolve failed, falling back: $e');
+    }
+
+    // 2) Un-attested InnerTube resolution in a background isolate.
     Object? lastErr;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
@@ -66,21 +81,9 @@ class YoutubeDownloader {
     throw lastErr ?? 'Stream resolution failed';
   }
 
-  /// Muxed progressive formats (video+audio in one MP4). These are the only
-  /// YouTube streams still served to non-player clients on blocked networks.
-  static const _muxedItags = {'17', '18', '22'};
-
-  /// Best progressive MP4 for [videoId]: returns [url, bytes, itag, null]
-  /// ([0] == null when the player response offered none). Must be called from
-  /// a background isolate.
-  static Future<List<String?>> rawProgressive(String videoId) async {
-    final fmts = await _playerFormats(videoId);
-    final muxed = fmts.where((f) => _muxedItags.contains(f['itag'])).toList()
-      ..sort((a, b) => (b['clen'] as int).compareTo(a['clen'] as int));
-    final best = muxed.firstOrNull;
-    if (best == null) return List<String?>.filled(4, null);
-    return [best['url'] as String, '${best['clen']}', best['itag'] as String, null];
-  }
+  /// Raw player formats that already carry a direct `url`
+  /// (`itag`/`mime`/`clen`/`url`). Runs inside whatever isolate calls it.
+  static Future<List<Map<String, dynamic>>> rawFormats(String videoId) => _playerFormats(videoId);
 
   /// Picks [videoUrl, videoBytes, audioUrl, audioBytes] from the raw player
   /// response. Runs in whatever isolate calls it.
@@ -187,6 +190,8 @@ class YoutubeDownloader {
           'itag': f['itag']?.toString() ?? '',
           'mime': (f['mimeType'] ?? '').toString().split(';').first,
           'clen': int.tryParse('${f['contentLength'] ?? 0}') ?? 0,
+          'height': int.tryParse('${f['height'] ?? 0}') ?? 0,
+          'fps': int.tryParse('${f['fps'] ?? 0}') ?? 0,
           'url': url,
         });
       }

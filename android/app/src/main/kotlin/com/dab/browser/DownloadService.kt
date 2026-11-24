@@ -84,7 +84,6 @@ class DownloadService : Service() {
     }
 
     private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
-
     /// Records a download that was performed outside the native engine (the
     /// bundled yt-dlp extractor) so it appears in the Downloads list and
     /// survives a restart.
