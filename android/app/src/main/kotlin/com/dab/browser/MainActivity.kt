@@ -156,8 +156,16 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                "failDownload" -> {
-                    val id = call.argument<String>("taskId") ?: ""; val reason = call.argument<String>("reason") ?: "Download failed"
+                "registerExternalTask" -> {
+                    val id = call.argument<String>("taskId") ?: ""
+                    val url = call.argument<String>("url") ?: ""
+                    val path = call.argument<String>("destinationPath") ?: ""
+                    val bytes = (call.argument<Number>("totalBytes"))?.toLong() ?: 0L
+                    val ds = downloadService
+                    if (id.isEmpty() || path.isEmpty() || ds == null) result.success(false)
+                    else { ds.registerExternalTask(id, url, path, bytes); result.success(true) }
+                }
+                "failDownload" -> {                    val id = call.argument<String>("taskId") ?: ""; val reason = call.argument<String>("reason") ?: "Download failed"
                     DownloadService.allTasks[id]?.let { it.status = DownloadStatus.FAILED; it.errorMessage = reason; downloadService?.db?.upsertTask(it); DownloadService.dispatchProgress(it, isStateChange = true) }
                     result.success(true)
                 }

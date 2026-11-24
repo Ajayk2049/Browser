@@ -42,6 +42,7 @@ class GeckoPlatformView(
         runtime = GeckoRuntimeProvider.get(context)
         session.open(runtime!!)
         geckoView.setSession(session)
+        ExtensionManager.attachSession(session)
         android.util.Log.d("NavPerf", "Session opened, activating")
         android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
         session.setActive(true)

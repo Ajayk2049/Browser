@@ -13,12 +13,12 @@ import '../utils/url_metadata_helper.dart';
 /// Material 3 monochrome Download dialog matching 1DM+ layout with auto-resolution.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class AddDownloadDialog extends StatefulWidget {
-  final String? initialUrl, audioUrl, suggestedFileName, referer, videoId, videoItag, audioItag;
+  final String? initialUrl, audioUrl, suggestedFileName, referer, videoId, videoItag, audioItag, mediaType;
   final int? totalBytes, audioBytes;
-  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer, this.videoId, this.videoItag, this.audioItag});
+  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer, this.videoId, this.videoItag, this.audioItag, this.mediaType});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer, String? videoId, String? videoItag, String? audioItag}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer, videoId: videoId, videoItag: videoItag, audioItag: audioItag));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer, String? videoId, String? videoItag, String? audioItag, String? mediaType}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer, videoId: videoId, videoItag: videoItag, audioItag: audioItag, mediaType: mediaType));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -146,6 +146,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       videoId: widget.videoId,
       videoItag: widget.videoItag,
       audioItag: widget.audioItag,
+      audioOnly: widget.mediaType == 'audio',
     );
     if (mounted) {
       Navigator.pop(context, ok);

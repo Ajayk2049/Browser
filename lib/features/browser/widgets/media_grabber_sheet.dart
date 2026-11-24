@@ -65,7 +65,7 @@ class _MediaGrabberSheetState extends State<MediaGrabberSheet> {
     final qTag = media.quality?.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     final withQ = (qTag != null && qTag.isNotEmpty) ? '$safeTitle ($qTag)' : safeTitle;
     final suggested = withQ.isNotEmpty ? '$withQ.$ext' : null;
-    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, audioBytes: media.audioBytes, referer: media.referer, suggestedFileName: suggested, totalBytes: media.totalBytes, videoId: media.videoId, videoItag: media.videoItag, audioItag: media.audioItag);
+    await AddDownloadDialog.show(context, initialUrl: media.url, audioUrl: media.audioUrl, audioBytes: media.audioBytes, referer: media.referer, suggestedFileName: suggested, totalBytes: media.totalBytes, videoId: media.videoId, videoItag: media.videoItag, audioItag: media.audioItag, mediaType: media.type);
   }
 
   IconData _iconForType(String type) => switch (type.toLowerCase()) {

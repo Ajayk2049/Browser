@@ -1,4 +1,4 @@
-package com.dab.browser
+﻿package com.dab.browser
 
 import android.app.AlertDialog
 import android.content.Context
@@ -17,12 +17,38 @@ class ExtensionManager(
     messenger: BinaryMessenger
 ) : MethodChannel.MethodCallHandler {
 
+    companion object {
+        private const val SNIFFER_ID = "media-sniffer@dab.browser"
+        private const val SNIFFER_APP = "dab.sniffer"
+
+        @Volatile
+        private var shared: ExtensionManager? = null
+
+        /// Forwards a sniffed stream URL reported by a browser session to Dart.
+        @JvmStatic
+        fun reportSniffedMedia(url: String, pageUrl: String, itag: String, mime: String) {
+            shared?.forwardSniffed(url, pageUrl, itag, mime)
+        }
+
+        /// Registers the media-sniffer message delegate on [session] so its
+        /// content script can reach the app.
+        @JvmStatic
+        fun attachSession(session: GeckoSession) {
+            shared?.attachSnifferSession(session)
+        }
+    }
+
     private val channel = MethodChannel(messenger, "com.dab/extensions")
     private val runtime: GeckoRuntime get() = GeckoRuntimeProvider.get(context)
     private val controller: WebExtensionController get() = runtime.webExtensionController
     private val prefs: SharedPreferences = context.getSharedPreferences("ext_prefs", Context.MODE_PRIVATE)
 
+    @Volatile
+    private var snifferExt: WebExtension? = null
+    private val pendingSessions = mutableListOf<GeckoSession>()
+
     init {
+        shared = this
         channel.setMethodCallHandler(this)
         setupPromptDelegate()
 
@@ -59,47 +85,99 @@ class ExtensionManager(
     /// Bundled extension that observes the page's own googlevideo traffic and
     /// forwards the (attested, session-bound) stream URLs to Dart. These are
     /// the only URLs YouTube reliably serves to non-player clients nowadays.
-    private fun ensureMediaSniffer() {
-        val id = "media-sniffer@dab.browser"
-        runtime.webExtensionController.ensureBuiltIn("resource://android/assets/extensions/media_sniffer/", id).accept({ ext ->
-            if (ext == null) return@accept
+    private fun ensureMediaSniffer(attempt: Int = 0) {
+        runtime.webExtensionController.ensureBuiltIn("resource://android/assets/extensions/media_sniffer/", SNIFFER_ID).accept({ ext ->
+            if (ext == null) {
+                Log.w("ExtDebug", "MediaSniffer ensureBuiltIn returned null (attempt $attempt)")
+                return@accept
+            }
+            Log.i("ExtDebug", "MediaSniffer installed id=${ext.id} enabled=${ext.metaData.enabled}")
+            snifferExt = ext
+            runOnUiThread {
+                try {
+                    ext.setMessageDelegate(snifferDelegate, SNIFFER_APP)
+                    Log.i("ExtDebug", "MediaSniffer message delegate registered")
+                } catch (e: Exception) {
+                    Log.w("ExtDebug", "MediaSniffer delegate registration failed", e)
+                }
+                for (s in pendingSessions.toList()) bindSniffer(ext, s)
+                pendingSessions.clear()
+            }
+        }, { err ->
+            Log.w("ExtDebug", "MediaSniffer ensureBuiltIn failed (attempt $attempt): ${err?.message}")
+            // Gecko may not be listening yet on a cold start; retry briefly.
+            if (attempt < 10) {
+                Handler(Looper.getMainLooper()).postDelayed({ ensureMediaSniffer(attempt + 1) }, 1500)
+            }
+        })
+    }
+
+    /// Content scripts talk to the app through their *session*, so every
+    /// GeckoSession needs its own delegate for the same native app name.
+    fun attachSnifferSession(session: GeckoSession) {
+        runOnUiThread {
+            val ext = snifferExt
+            if (ext != null) bindSniffer(ext, session) else pendingSessions.add(session)
+        }
+    }
+
+    private fun bindSniffer(ext: WebExtension, session: GeckoSession) {
+        try {
+            session.webExtensionController.setMessageDelegate(ext, snifferDelegate, SNIFFER_APP)
+            Log.i("ExtDebug", "MediaSniffer session delegate bound to ${System.identityHashCode(session)}")
+        } catch (e: Exception) {
+            Log.w("ExtDebug", "MediaSniffer session delegate failed", e)
+        }
+    }
+
+    private val snifferDelegate = object : WebExtension.MessageDelegate {
+        override fun onMessage(
+            nativeApp: String,
+            message: Any,
+            sender: WebExtension.MessageSender
+        ): GeckoResult<Any>? {
             try {
-                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
-                    override fun onMessage(
-                        nativeApp: String,
-                        message: Any,
-                        sender: WebExtension.MessageSender
-                    ): GeckoResult<Any>? {
-                        try {
-                            val url: String; val pageUrl: String; val itag: String; val mime: String
-                            when (message) {
-                                is org.json.JSONObject -> {
-                                    url = message.optString("url", "")
-                                    pageUrl = message.optString("pageUrl", "")
-                                    itag = message.optString("itag", "")
-                                    mime = message.optString("mime", "")
-                                }
-                                is Map<*, *> -> {
-                                    url = message["url"] as? String ?: ""
-                                    pageUrl = message["pageUrl"] as? String ?: ""
-                                    itag = message["itag"] as? String ?: ""
-                                    mime = message["mime"] as? String ?: ""
-                                }
-                                else -> return null
-                            }
-                            if (url.isNotEmpty()) {
-                                runOnUiThread {
-                                    channel.invokeMethod("onSniffedMedia", mapOf(
-                                        "url" to url, "pageUrl" to pageUrl, "itag" to itag, "mime" to mime
-                                    ))
-                                }
-                            }
-                        } catch (_: Exception) {}
-                        return null
-                    }
-                }, "dab-media-sniffer")
-            } catch (_: Exception) {}
-        }, { })
+                fun str(key: String): String = when (message) {
+                    is org.json.JSONObject -> message.optString(key, "")
+                    is Map<*, *> -> message[key] as? String ?: ""
+                    else -> ""
+                }
+                fun bool(key: String): Boolean = when (message) {
+                    is org.json.JSONObject -> message.optBoolean(key, false)
+                    is Map<*, *> -> message[key] as? Boolean ?: false
+                    else -> false
+                }
+                if (message !is org.json.JSONObject && message !is Map<*, *>) return null
+                val type = str("type").ifEmpty { "media" }
+                if (type == "hello") {
+                    Log.i("ExtDebug", "MediaSniffer hello from=${str("from").ifEmpty { "background" }} webRequest=${bool("hasWebRequest")} listener=${bool("hasOnBeforeRequest")}")
+                    return null
+                }
+                if (type == "error") {
+                    Log.w("ExtDebug", "MediaSniffer script error: ${str("message")}")
+                    return null
+                }
+                val url = str("url")
+                val pageUrl = str("pageUrl")
+                val itag = str("itag")
+                val mime = str("mime")
+                if (url.isNotEmpty()) {
+                    Log.d("ExtDebug", "Sniffed itag=$itag url=${url.take(400)}")
+                    forwardSniffed(url, pageUrl, itag, mime)
+                }
+            } catch (e: Exception) {
+                Log.w("ExtDebug", "MediaSniffer message parse failed", e)
+            }
+            return null
+        }
+    }
+
+    private fun forwardSniffed(url: String, pageUrl: String, itag: String, mime: String) {
+        runOnUiThread {
+            channel.invokeMethod("onSniffedMedia", mapOf(
+                "url" to url, "pageUrl" to pageUrl, "itag" to itag, "mime" to mime
+            ))
+        }
     }
 
     private fun logExtensionState(trigger: String) {
@@ -123,7 +201,7 @@ class ExtensionManager(
                 dispatchResult("onInstallPrompt") {
                     val name = ext.metaData.name ?: "Unknown Extension"
                     val allPerms = (perms.toList() + origins.toList()).filter { it.isNotEmpty() }
-                    val msg = if (allPerms.isNotEmpty()) "Permissions:\n• " + allPerms.joinToString("\n• ") else "No special permissions."
+                    val msg = if (allPerms.isNotEmpty()) "Permissions:\nâ€¢ " + allPerms.joinToString("\nâ€¢ ") else "No special permissions."
                     AlertDialog.Builder(context).setTitle("Add $name?").setMessage(msg)
                         .setPositiveButton("Add") { _, _ -> result.complete(WebExtension.PermissionPromptResponse(true, true, true)) }
                         .setNegativeButton("Cancel") { _, _ -> result.complete(WebExtension.PermissionPromptResponse(false, false, false)) }
@@ -139,7 +217,7 @@ class ExtensionManager(
                 dispatchResult("onUpdatePrompt") {
                     val name = ext.metaData.name ?: "Extension"
                     val all = (perms.toList() + origins.toList()).filter { it.isNotEmpty() }
-                    val msg = if (all.isNotEmpty()) "Update requires:\n• " + all.joinToString("\n• ") else "Update $name?"
+                    val msg = if (all.isNotEmpty()) "Update requires:\nâ€¢ " + all.joinToString("\nâ€¢ ") else "Update $name?"
                     AlertDialog.Builder(context).setTitle("Update $name?").setMessage(msg)
                         .setPositiveButton("Update") { _, _ -> result.complete(AllowOrDeny.ALLOW) }
                         .setNegativeButton("Skip") { _, _ -> result.complete(AllowOrDeny.DENY) }

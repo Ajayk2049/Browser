@@ -30,9 +30,13 @@ object GeckoRuntimeProvider {
             .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
             .build()
 
+        val debuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val settings = GeckoRuntimeSettings.Builder()
             .contentBlocking(cbSettings)
             .extensionsProcessEnabled(true)
+            // Debug builds: surface page/extension console output in logcat so
+            // the media sniffer and page scripting are diagnosable.
+            .consoleOutput(debuggable)
             .build()
 
         android.util.Log.i("GeckoPerf", "GeckoRuntime initialized at startup")

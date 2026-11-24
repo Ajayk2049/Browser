@@ -11,9 +11,14 @@ import 'features/onboarding/services/onboarding_service.dart';
 import 'features/settings/services/appearance_settings_service.dart';
 import 'features/settings/services/homepage_settings_service.dart';
 import 'features/settings/services/search_engine_settings_service.dart';
+import 'features/settings/services/web_extension_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Register the extension/native channel handlers before the Gecko runtime
+  // installs the bundled sniffer extension, otherwise early `onSniffedMedia`
+  // messages are delivered to nobody and dropped.
+  WebExtensionService.instance;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 24 * 1024 * 1024;
   await OnboardingService.instance.init();
   runApp(

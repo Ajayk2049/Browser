@@ -10,8 +10,39 @@
 (function () {
   "use strict";
 
-  const NATIVE_APP = "dab-media-sniffer";
+  const NATIVE_APP = "dab.sniffer";
   const seen = new Set();
+
+  function log() {
+    try {
+      console.log.apply(console, ["[SNIFF]"].concat(Array.prototype.slice.call(arguments)));
+    } catch (e) {}
+  }
+
+  function send(payload) {
+    try {
+      const p = browser.runtime.sendNativeMessage(NATIVE_APP, payload);
+      if (p && typeof p.then === "function") {
+        p.then(
+          function () {},
+          function (e) { log("sendNativeMessage rejected:", String(e)); }
+        );
+      } else {
+        log("sendNativeMessage returned no promise");
+      }
+    } catch (e) {
+      log("sendNativeMessage threw:", String(e));
+    }
+  }
+
+  log("startup; webRequest=", !!(browser && browser.webRequest));
+
+  // Startup diagnostic: tells the native side whether webRequest exists at all.
+  send({
+    type: "hello",
+    hasWebRequest: !!(browser && browser.webRequest),
+    hasOnBeforeRequest: !!(browser && browser.webRequest && browser.webRequest.onBeforeRequest),
+  });
 
   function normalize(url) {
     try {
@@ -27,35 +58,42 @@
   }
 
   function isUseful(url) {
-    return url.indexOf("googlevideo.com/videoplayback") !== -1;
+    return url.indexOf("googlevideo.com/videoplayback") !== -1 ||
+      url.indexOf("/videoplayback") !== -1;
   }
 
-  browser.webRequest.onBeforeRequest.addListener(
-    function (details) {
-      try {
-        const raw = details.url || "";
-        if (!isUseful(raw)) return {};
-        const base = normalize(raw);
-        if (seen.has(base)) return {};
-        seen.add(base);
-        if (seen.size > 300) seen.clear();
+  function onRequest(details) {
+    try {
+      const raw = details.url || "";
+      if (!isUseful(raw)) return {};
+      const base = normalize(raw);
+      if (seen.has(base)) return {};
+      seen.add(base);
+      if (seen.size > 300) seen.clear();
 
-        const payload = {
-          url: base,
-          pageUrl: details.originUrl || details.documentUrl || "",
-          itag: (base.match(/[?&]itag=(\d+)/) || [])[1] || "",
-          mime: decodeURIComponent((base.match(/[?&]mime=([^&]+)/) || [])[1] || ""),
-        };
-        try {
-          browser.runtime.sendNativeMessage(NATIVE_APP, payload).then(
-            function (resp) { void resp; },
-            function () {}
-          );
-        } catch (e) {}
-      } catch (e) {}
-      return {};
-    },
-    { urls: ["*://*.googlevideo.com/videoplayback*"] },
-    []
-  );
+      log("media itag=", (base.match(/[?&]itag=(\d+)/) || [])[1] || "?");
+      send({
+        type: "media",
+        url: base,
+        pageUrl: details.originUrl || details.documentUrl || "",
+        itag: (base.match(/[?&]itag=(\d+)/) || [])[1] || "",
+        mime: decodeURIComponent((base.match(/[?&]mime=([^&]+)/) || [])[1] || ""),
+      });
+    } catch (e) {
+      log("onRequest error:", String(e));
+    }
+    return {};
+  }
+
+  try {
+    browser.webRequest.onBeforeRequest.addListener(
+      onRequest,
+      { urls: ["*://*.googlevideo.com/videoplayback*", "*://*/videoplayback*"] },
+      []
+    );
+    log("listener registered");
+  } catch (e) {
+    log("addListener failed:", String(e));
+    send({ type: "error", message: String(e) });
+  }
 })();

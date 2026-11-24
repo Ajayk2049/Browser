@@ -43,23 +43,37 @@ class MediaSnifferService {
 
   void handleNativeCall(MethodCall call) {
     final args = Map<dynamic, dynamic>.from(call.arguments as Map? ?? {});
-    final url = args['url'] as String? ?? '';
-    final itag = args['itag'] as String? ?? '';
-    if (url.isEmpty || itag.isEmpty) return;
-    final m = SniffedMedia(
-      url: url,
+    ingestUrl(
+      url: args['url'] as String? ?? '',
+      itag: args['itag'] as String? ?? '',
       pageUrl: args['pageUrl'] as String? ?? '',
-      itag: itag,
       mime: args['mime'] as String? ?? '',
     );
-    final vid = m.videoId;
-    if (vid == null) return;
+  }
+
+  /// Registers one observed stream URL. Used both by the extension bridge and
+  /// by [PageMediaSniffer] (URLs lifted straight out of the page's player).
+  /// Returns true when the URL was new/usable.
+  bool ingestUrl({
+    required String url,
+    required String itag,
+    required String pageUrl,
+    String mime = '',
+  }) {
+    if (url.isEmpty || itag.isEmpty) return false;
     final known = avcVideoItags.containsKey(itag) || m4aAudioItags.contains(itag);
-    if (!known) return; // VP9/AV1/webm audio can't be muxed by the native pipeline.
-    debugPrint('[SNIFF] itag=$itag mime=${m.mime} video=$vid');
+    if (!known) return false; // VP9/AV1/webm audio can't be muxed by the native pipeline.
+    final resolvedMime = mime.isNotEmpty
+        ? mime
+        : (m4aAudioItags.contains(itag) ? 'audio/mp4' : 'video/mp4');
+    final m = SniffedMedia(url: url, pageUrl: pageUrl, itag: itag, mime: resolvedMime);
+    final vid = m.videoId;
+    if (vid == null) return false;
+    debugPrint('[SNIFF] itag=$itag mime=$resolvedMime video=$vid');
     _byVideo.putIfAbsent(vid, () => {});
     _byVideo[vid]![itag] = m; // newest URL per itag wins (fresh = playable)
     _ctrl.add(m);
+    return true;
   }
 
   void clearFor(String videoId) => _byVideo.remove(videoId);

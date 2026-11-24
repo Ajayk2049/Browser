@@ -85,6 +85,25 @@ class DownloadService : Service() {
 
     private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
 
+    /// Records a download that was performed outside the native engine (the
+    /// bundled yt-dlp extractor) so it appears in the Downloads list and
+    /// survives a restart.
+    fun registerExternalTask(taskId: String, url: String, destinationPath: String, totalBytes: Long) {
+        val size = if (totalBytes > 0) totalBytes else
+            runCatching { java.io.File(destinationPath).length() }.getOrDefault(0L)
+        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, 1) }
+        task.destinationPath = destinationPath
+        task.finalUrl = url
+        task.totalBytes = size
+        task.downloadedBytes = size
+        task.speedBytesPerSec = 0L
+        task.status = DownloadStatus.COMPLETED
+        task.errorMessage = null
+        db.upsertTask(task)
+        dispatchProgress(task, isStateChange = true)
+        Log.i("DLREFRESH", "registerExternalTask: $taskId -> $destinationPath ($size bytes)")
+    }
+
     @Synchronized
     private fun enqueueTask(task: DownloadTask, forceRestart: Boolean = false) {
         val running = activeEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } + activeTorrentEngines.values.count { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }

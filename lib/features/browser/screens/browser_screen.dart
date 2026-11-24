@@ -229,7 +229,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
       for (final i in list) {
         // Sniffed (page-session) items win over API-derived ones for the same itag.
         if (_detectedMedia.any((m) => m.sniffed && m.videoItag == i.videoItag && m.videoId == vid)) continue;
-        if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i);
+        // Replace a stale entry for the same stream with the freshly minted URL
+        // instead of appending a duplicate row to the grabber.
+        final idx = _detectedMedia.indexWhere(
+          (m) => !m.sniffed && m.videoId == i.videoId && m.videoItag == i.videoItag,
+        );
+        if (idx >= 0) {
+          _detectedMedia[idx] = i;
+        } else if (i.videoId != null && i.videoItag != null) {
+          // yt-dlp items all share the page URL, so (video, format) is the key.
+          _detectedMedia.add(i);
+        } else if (!_detectedMedia.any((m) => m.url == i.url)) {
+          _detectedMedia.add(i);
+        }
       }
     });
   }
