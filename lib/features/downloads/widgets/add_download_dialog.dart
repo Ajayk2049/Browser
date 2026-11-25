@@ -15,10 +15,11 @@ import '../utils/url_metadata_helper.dart';
 class AddDownloadDialog extends StatefulWidget {
   final String? initialUrl, audioUrl, suggestedFileName, referer, videoId, videoItag, audioItag, mediaType;
   final int? totalBytes, audioBytes;
-  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer, this.videoId, this.videoItag, this.audioItag, this.mediaType});
+  final Map<String, String>? headers;
+  const AddDownloadDialog({super.key, this.initialUrl, this.audioUrl, this.audioBytes, this.suggestedFileName, this.totalBytes, this.referer, this.videoId, this.videoItag, this.audioItag, this.mediaType, this.headers});
 
-  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer, String? videoId, String? videoItag, String? audioItag, String? mediaType}) =>
-      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer, videoId: videoId, videoItag: videoItag, audioItag: audioItag, mediaType: mediaType));
+  static Future<bool?> show(BuildContext context, {String? initialUrl, String? audioUrl, int? audioBytes, String? suggestedFileName, int? totalBytes, String? referer, String? videoId, String? videoItag, String? audioItag, String? mediaType, Map<String, String>? headers}) =>
+      showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => AddDownloadDialog(initialUrl: initialUrl, audioUrl: audioUrl, audioBytes: audioBytes, suggestedFileName: suggestedFileName, totalBytes: totalBytes, referer: referer, videoId: videoId, videoItag: videoItag, audioItag: audioItag, mediaType: mediaType, headers: headers));
 
   @override
   State<AddDownloadDialog> createState() => _AddDownloadDialogState();
@@ -102,7 +103,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     if (mounted) setState(() => _sizeText = isMag ? 'Connecting to trackers to resolve size...' : 'Resolving file info...');
     if (isMag) await Future<void>.delayed(const Duration(milliseconds: 600));
     try {
-      final meta = await UrlMetadataHelper.resolve(trimmed, referer: _refCtrl.text.trim());
+      final meta = await UrlMetadataHelper.resolve(trimmed, referer: _refCtrl.text.trim(), headers: widget.headers);
       if (!mounted) return;
       setState(() {
         if (_resolvedTotalBytes <= 0 && meta.totalBytes > 0) {
@@ -112,7 +113,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
         if (widget.suggestedFileName == null || widget.suggestedFileName!.isEmpty) {
           _nameCtrl.text = meta.fileName;
           _ext = meta.fileExtension;
-          _sizeText = meta.formattedSize;
+          _sizeText = meta.totalBytes > 0 ? meta.formattedSize : 'Stream (size resolved while downloading)';
+        } else if (meta.totalBytes <= 0) {
+          _sizeText = 'Stream (size resolved while downloading)';
         }
         _supportsResume = meta.supportsResume;
         if (meta.finalUrl.isNotEmpty && meta.finalUrl != url && meta.finalUrl.startsWith('http')) {
@@ -147,6 +150,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       videoItag: widget.videoItag,
       audioItag: widget.audioItag,
       audioOnly: widget.mediaType == 'audio',
+      headers: widget.headers,
     );
     if (mounted) {
       Navigator.pop(context, ok);

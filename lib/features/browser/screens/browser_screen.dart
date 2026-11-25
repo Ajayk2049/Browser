@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../downloads/downloads.dart';
@@ -61,6 +61,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     BookmarksService.instance.addListener(_syncData);
     QuickLinksService.instance.addListener(_syncData);
     _channel.setMethodCallHandler((call) async { if (call.method == 'closeAllPrivateTabs') _closeAllPrivateTabs(); });
+    MediaSnifferService.instance.genericStream.listen(_onGenericSniffedMedia);
+    MediaSnifferService.instance.removedUrlStream.listen(_onRemovedSniffedUrl);
     MediaSnifferService.instance.stream.listen(_onSniffedMedia);
   }
 
@@ -130,7 +132,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       if (isPrivate != null) _isPrivateMode = isPrivate;
       _activeTabId = id; _activeTab.isLoaded = true;
-      _urlController.text = _activeTab.isHome ? '' : _activeTab.url; _detectedMedia.clear();
+      _urlController.text = _activeTab.isHome ? '' : _activeTab.url;
+      _detectedMedia..clear()..addAll(_activeTab.isHome ? const [] : MediaSnifferService.instance.buildGenericItemsForPage(_activeTab.url, pageTitle: _activeTab.title));
     });
     if (oldTab.id != _activeTab.id) {
       if (!oldTab.isHome) oldTab.controller.setActive(false);
@@ -235,20 +238,38 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
     }
     if (!mounted) return;
-    BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+    final isYt = YoutubeGrabberService.isYouTubeUrl(_activeTab.url) || YoutubeGrabberService.extractVideoId(_activeTab.url) != null;
+    List<DetectedMedia> sheetItems = _detectedMedia;
+    List<DetectedMedia> previews = const [];
+    if (!isYt && !_activeTab.isHome) {
+      final generic = MediaSnifferService.instance.buildGenericItemsForPage(_activeTab.url, pageTitle: _activeTab.title);
+      previews = MediaSnifferService.instance.buildPreviewItemsForPage(_activeTab.url, pageTitle: _activeTab.title);
+      final genericKeys = {for (final g in generic) MediaSnifferService.stripQuery(g.url)};
+      final extras = _detectedMedia.where((m) => !m.sniffed && !genericKeys.contains(MediaSnifferService.stripQuery(m.url))).toList();
+      sheetItems = [...generic, ...extras];
+      setState(() => _detectedMedia..clear()..addAll(sheetItems));
+    }
+    BrowserShortcutHelper.openMediaGrabber(context, sheetItems, previews: previews);
   }
   void _handleMediaDetected(String u, String t, String typ) {
-    if (YoutubeGrabberService.isYouTubeUrl(_activeTab.url) || _detectedMedia.any((m) => m.url == u)) return;
-    setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
+    if (YoutubeGrabberService.isYouTubeUrl(_activeTab.url)) return;
+    if (!MediaSnifferService.isAllowedMedia(url: u, mediaType: typ)) return;
+    final cleanU = MediaSnifferService.stripQuery(u);
+    if (_detectedMedia.any((m) => MediaSnifferService.stripQuery(m.url) == cleanU && m.type == typ)) return;
+    setState(() => _detectedMedia.add(DetectedMedia(url: u, referer: _activeTab.url, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
   }
   void _onUrlUpdated(String u) {
     setState(() => _urlController.text = u);
     final vid = YoutubeGrabberService.extractVideoId(u);
     // Same video (YouTube re-writes the query string on SPA navigation):
     // keep the streams we already resolved instead of clearing + re-probing.
-    if (vid == _lastCheckedVideoId) return;
+    if (vid != null && vid == _lastCheckedVideoId) return;
     _lastCheckedVideoId = vid;
-    if (vid == null) { if (_detectedMedia.isNotEmpty) setState(_detectedMedia.clear); return; }
+    if (vid == null) {
+      final generic = MediaSnifferService.instance.buildGenericItemsForPage(u, pageTitle: _activeTab.title);
+      setState(() => _detectedMedia..clear()..addAll(generic));
+      return;
+    }
     setState(_detectedMedia.clear);
     _checkYouTube(u);
   }
@@ -309,6 +330,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
         _detectedMedia.removeWhere((m) => !m.sniffed && m.videoId == vid && m.videoItag == i.videoItag);
         if (!_detectedMedia.any((m) => m.url == i.url)) _detectedMedia.add(i);
       }
+    });
+  }
+
+  void _onRemovedSniffedUrl(String cleanUrl) {
+    if (!mounted || YoutubeGrabberService.isYouTubeUrl(_activeTab.url)) return;
+    if (_detectedMedia.any((m) => MediaSnifferService.stripQuery(m.url) == cleanUrl)) {
+      setState(() => _detectedMedia.removeWhere((m) => MediaSnifferService.stripQuery(m.url) == cleanUrl));
+    }
+  }
+
+  void _onGenericSniffedMedia(GenericSniffedMedia g) {
+    if (!mounted || _activeTab.isHome) return;
+    if (YoutubeGrabberService.extractVideoId(_activeTab.url) != null || YoutubeGrabberService.isYouTubeUrl(_activeTab.url)) return;
+    final activeKey = MediaSnifferService.pageKey(_activeTab.url);
+    final gKey = g.pageUrl.isNotEmpty ? MediaSnifferService.pageKey(g.pageUrl) : '';
+    final activeHost = Uri.tryParse(_activeTab.url)?.host.toLowerCase() ?? '';
+    final originHost = Uri.tryParse(g.originUrl)?.host.toLowerCase() ?? '';
+    final matchesTab = gKey.isNotEmpty ? (gKey == activeKey) : (activeHost.isNotEmpty && originHost == activeHost);
+    if (!matchesTab) return;
+    final detected = MediaSnifferService.instance.toDetectedMedia(g, pageTitle: _activeTab.title);
+    final cleanUrl = MediaSnifferService.stripQuery(detected.url);
+    setState(() {
+      if (g.replacesUrl != null) {
+        final cleanReplaced = MediaSnifferService.stripQuery(g.replacesUrl!);
+        _detectedMedia.removeWhere((m) => m.type == 'stream' && MediaSnifferService.stripQuery(m.url) == cleanReplaced);
+      }
+      final idx = _detectedMedia.indexWhere((m) => MediaSnifferService.stripQuery(m.url) == cleanUrl && m.type == detected.type && (m.quality ?? '') == (detected.quality ?? ''));
+      if (idx >= 0) _detectedMedia[idx] = detected;
+      else _detectedMedia.add(detected);
     });
   }
 

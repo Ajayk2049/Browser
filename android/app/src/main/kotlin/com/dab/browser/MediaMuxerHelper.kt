@@ -97,7 +97,7 @@ object MediaMuxerHelper {
             videoExtractor.release(); videoExtractor = null
             audioExtractor.release(); audioExtractor = null
 
-            val verify = verifyOutput(tempOutput)
+            val verify = verifyOutput(tempOutput, requireBothTracks = true)
             if (!verify.success) {
                 if (tempOutput.exists()) tempOutput.delete()
                 return verify
@@ -120,7 +120,74 @@ object MediaMuxerHelper {
         }
     }
 
-    private fun verifyOutput(file: File): MuxResult {
+    /** Remuxes a single multi-track/single-track container (e.g. .ts or concatenated fMP4) into MP4. */
+    fun remuxToMp4(inputFile: File, outputFile: File): MuxResult {
+        var extractor: MediaExtractor? = null
+        var muxer: MediaMuxer? = null
+        val tempOutput = File("${outputFile.path}.remux.tmp")
+        try {
+            if (!inputFile.exists() || inputFile.length() == 0L) return MuxResult(false, "Input file missing or empty")
+            extractor = MediaExtractor().apply { setDataSource(inputFile.path) }
+            val trackMap = HashMap<Int, Int>()
+            val basePts = HashMap<Int, Long>()
+            val lastPts = HashMap<Int, Long>()
+            var maxBuf = 4 * 1024 * 1024
+            if (tempOutput.exists()) tempOutput.delete()
+            muxer = MediaMuxer(tempOutput.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+            for (i in 0 until extractor.trackCount) {
+                val fmt = extractor.getTrackFormat(i)
+                val mime = fmt.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+                    extractor.selectTrack(i)
+                    trackMap[i] = muxer.addTrack(fmt)
+                    try { maxBuf = maxOf(maxBuf, fmt.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)) } catch (_: Exception) {}
+                }
+            }
+            if (trackMap.isEmpty()) return MuxResult(false, "No playable video/audio tracks found in ${inputFile.name}")
+            muxer.start()
+
+            val buffer = ByteBuffer.allocate(maxBuf)
+            val info = MediaCodec.BufferInfo()
+            while (true) {
+                val srcTrack = extractor.sampleTrackIndex
+                if (srcTrack < 0) break
+                val dstTrack = trackMap[srcTrack]
+                if (dstTrack == null) { extractor.advance(); continue }
+                info.offset = 0
+                info.size = extractor.readSampleData(buffer, 0)
+                if (info.size < 0) break
+                val rawTime = extractor.sampleTime.coerceAtLeast(0L)
+                val base = basePts.getOrPut(srcTrack) { if (rawTime > 1_000_000L) rawTime else 0L }
+                var pts = (rawTime - base).coerceAtLeast(0L)
+                val prev = lastPts[srcTrack] ?: -1L
+                if (pts < prev) pts = prev
+                lastPts[srcTrack] = pts
+                info.presentationTimeUs = pts
+                info.flags = extractor.sampleFlags
+                muxer.writeSampleData(dstTrack, buffer, info)
+                extractor.advance()
+            }
+
+            muxer.stop(); muxer.release(); muxer = null
+            extractor.release(); extractor = null
+
+            val verify = verifyOutput(tempOutput, requireBothTracks = false)
+            if (!verify.success) { if (tempOutput.exists()) tempOutput.delete(); return verify }
+            if (outputFile.exists()) outputFile.delete()
+            if (!tempOutput.renameTo(outputFile)) return MuxResult(false, "Failed to rename remuxed file")
+            return MuxResult(true, videoTracks = verify.videoTracks, audioTracks = verify.audioTracks)
+        } catch (e: Exception) {
+            Log.e(TAG, "Remux error: $e", e)
+            try { if (tempOutput.exists()) tempOutput.delete() } catch (_: Exception) {}
+            return MuxResult(false, e.message ?: "Remux failed")
+        } finally {
+            try { extractor?.release() } catch (_: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun verifyOutput(file: File, requireBothTracks: Boolean = true): MuxResult {
         if (!file.exists() || file.length() == 0L) return MuxResult(false, "Output file empty or missing")
         var extractor: MediaExtractor? = null
         try {
@@ -131,7 +198,12 @@ object MediaMuxerHelper {
                 if (mime.startsWith("video/")) vCount++
                 if (mime.startsWith("audio/")) aCount++
             }
-            if (vCount == 0 || aCount == 0) return MuxResult(false, "Missing tracks in output: v=$vCount, a=$aCount", vCount, aCount)
+            if (requireBothTracks && (vCount == 0 || aCount == 0)) {
+                return MuxResult(false, "Missing tracks in output: v=$vCount, a=$aCount", vCount, aCount)
+            }
+            if (!requireBothTracks && vCount == 0 && aCount == 0) {
+                return MuxResult(false, "No tracks in remuxed output", 0, 0)
+            }
             return MuxResult(true, videoTracks = vCount, audioTracks = aCount)
         } catch (e: Exception) {
             return MuxResult(false, "Output verification failed: ${e.message}")

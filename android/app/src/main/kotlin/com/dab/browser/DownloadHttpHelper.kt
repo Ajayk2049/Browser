@@ -73,11 +73,28 @@ object DownloadHttpHelper {
             .build()
     }
 
+    fun parseHeadersJson(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val obj = org.json.JSONObject(json)
+            val out = LinkedHashMap<String, String>()
+            obj.keys().forEach { k ->
+                val v = obj.optString(k, "").trim()
+                if (k.isNotBlank() && v.isNotEmpty()) out[k.trim()] = v
+            }
+            out
+        } catch (_: Exception) { emptyMap() }
+    }
+
+    private fun headerIgnoreCase(headers: Map<String, String>, name: String): String? =
+        headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+
     fun openStream(
         urlStr: String,
         rangeHeader: String? = null,
         referer: String? = null,
-        method: String = "GET"
+        method: String = "GET",
+        extraHeaders: Map<String, String> = emptyMap()
     ): StreamResponse {
         var current = urlStr
         for (hop in 0 until 8) {
@@ -85,6 +102,7 @@ object DownloadHttpHelper {
             val isYt = host.contains("googlevideo.com")
             // Pick the UA of the InnerTube client that minted this URL (its c= param).
             // Order matters: c=ANDROID_VR also contains c=ANDROID.
+            val capturedUa = if (!isYt) headerIgnoreCase(extraHeaders, "User-Agent") else null
             val ua = when {
                 current.contains("c=VISIONOS") -> VISIONOS_YT_USER_AGENT
                 current.contains("c=ANDROID_VR") -> ANDROID_VR_USER_AGENT
@@ -93,11 +111,14 @@ object DownloadHttpHelper {
                 current.contains("c=IOS") -> IOS_YT_USER_AGENT
                 current.contains("c=WEB") || current.contains("c=MWEB") -> browserUserAgent ?: USER_AGENT
                 isYt -> IOS_YT_USER_AGENT
+                !capturedUa.isNullOrBlank() -> capturedUa
                 else -> USER_AGENT
             }
+            val capturedRef = if (!isYt) headerIgnoreCase(extraHeaders, "Referer") else null
             val ref = when {
                 isYt || referer?.contains("googlevideo.com") == true -> null
                 !referer.isNullOrBlank() -> referer
+                !capturedRef.isNullOrBlank() -> capturedRef
                 host.isNotEmpty() -> "https://$host/"
                 else -> null
             }
@@ -108,6 +129,14 @@ object DownloadHttpHelper {
                 .header("User-Agent", ua)
                 .header("Accept", "*/*")
                 .header("Accept-Encoding", "identity")
+            if (!isYt) {
+                for ((k, v) in extraHeaders) {
+                    val lk = k.lowercase(Locale.ROOT)
+                    if (lk in setOf("user-agent", "referer", "range", "host", "content-length", "connection", "accept-encoding")) continue
+                    if (host.contains("youtube.com") && lk == "cookie") continue
+                    reqBuilder.header(k, v)
+                }
+            }
             if (isYt || host.contains("youtube.com")) reqBuilder.header("Cookie", "SOCS=CAE=")
             if (ref != null) reqBuilder.header("Referer", ref)
             if (rangeHeader != null) reqBuilder.header("Range", rangeHeader)
@@ -131,7 +160,7 @@ object DownloadHttpHelper {
         throw IOException("Too many redirects (>8) while connecting to $urlStr")
     }
 
-    fun probeUrl(urlStr: String, referer: String? = null): ProbeResult = try {
+    fun probeUrl(urlStr: String, referer: String? = null, extraHeaders: Map<String, String> = emptyMap()): ProbeResult = try {
         val isYt = urlStr.contains("googlevideo.com")
         if (isYt) {
             val clenParam = Regex("[?&]clen=(\\d+)").find(urlStr)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
@@ -140,25 +169,44 @@ object DownloadHttpHelper {
             }
         }
         val webSession = isWebSessionUrl(urlStr)
-        val range = if (isYt || webSession) null else "bytes=0-0"
-        val stream = openStream(urlStr, rangeHeader = range, referer = referer, method = "GET")
+        val range = if (isYt || webSession) null else "bytes=0-255"
+        val stream = openStream(urlStr, rangeHeader = range, referer = referer, method = "GET", extraHeaders = extraHeaders)
         stream.use { s ->
             val finalUrl = s.finalUrl
-            val cType = s.header("Content-Type")?.lowercase(Locale.ROOT)
+            var cType = s.header("Content-Type")?.lowercase(Locale.ROOT)
             val code = s.code
             val cr = s.header("Content-Range")
             val crTotal = cr?.substringAfterLast("/")?.trim()?.toLongOrNull()?.takeIf { it > 0 }
             val contentLen = s.header("Content-Length")?.toLongOrNull() ?: -1L
             val parsedLen = when {
                 crTotal != null -> crTotal
-                code == 206 -> if (contentLen > 1) contentLen else -1L
+                code == 206 -> if (contentLen > 256) contentLen else -1L
                 code in 200..299 -> contentLen
                 else -> -1L
             }
 
+            var htmlError: String? = null
+            if (!isYt && code in 200..299 && (cType == null || cType.contains("text/plain") || cType.contains("octet-stream"))) {
+                try {
+                    val buf = ByteArray(256)
+                    val read = s.byteStream.read(buf)
+                    if (read > 0) {
+                        val head = String(buf, 0, read, Charsets.UTF_8).trim().uppercase(Locale.ROOT)
+                        when {
+                            head.contains("#EXTM3U") -> cType = "application/x-mpegurl"
+                            head.startsWith("<?XML") && (head.contains("MEDIAPRESENTATIONDURATION") || head.contains("<ADAPTATIONSET")) -> cType = "application/dash+xml"
+                            head.startsWith("<!DOCTYPE HTML") || head.startsWith("<HTML") || head.startsWith("<HEAD") || head.startsWith("<BODY") -> {
+                                htmlError = "Server returned a webpage instead of a file."
+                                cType = "text/html"
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
             val len = if (parsedLen <= 0 && code in 200..399) {
                 try {
-                    openStream(finalUrl, referer = referer, method = "HEAD").use { h ->
+                    openStream(finalUrl, referer = referer, method = "HEAD", extraHeaders = extraHeaders).use { h ->
                         h.header("Content-Length")?.toLongOrNull() ?: parsedLen
                     }
                 } catch (_: Exception) { parsedLen }
@@ -167,7 +215,7 @@ object DownloadHttpHelper {
             val supportsRanges = code == 206 || code == 416 || s.header("Accept-Ranges")?.contains("bytes", true) == true
             val cd = s.header("Content-Disposition")
             val fileName = parseContentDisposition(cd)
-            ProbeResult(finalUrl, len, supportsRanges, cType, fileName, if (code >= 400) "HTTP $code" else null)
+            ProbeResult(finalUrl, len, supportsRanges, cType, fileName, htmlError ?: if (code >= 400) "HTTP $code" else null)
         }
     } catch (e: Exception) {
         Log.e(TAG, "probeUrl failed for $urlStr: ${e.message}", e)

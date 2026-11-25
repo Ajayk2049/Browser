@@ -1,8 +1,8 @@
-﻿{
+{
   "manifest_version": 2,
   "name": "DAB Media Sniffer",
-  "description": "Captures media stream URLs observed by the browser so the built-in download manager can offer them.",
-  "version": "1.16",
+  "description": "Captures media stream and downloadable file URLs observed by the browser.",
+  "version": "2.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "media-sniffer@dab.browser",
@@ -14,8 +14,8 @@
     "nativeMessaging",
     "nativeMessagingFromContent",
     "geckoViewAddons",
-    "*://*.googlevideo.com/*",
-    "*://*.youtube.com/*"
+    "cookies",
+    "<all_urls>"
   ],
   "background": {
     "scripts": ["background.js"],
@@ -23,10 +23,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_idle",
-      "all_frames": false
+      "all_frames": true
     }
   ]
 }

@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 3) {
+class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -23,7 +23,8 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 content_type TEXT,
                 referer TEXT,
                 audio_url TEXT,
-                audio_bytes INTEGER NOT NULL DEFAULT 0
+                audio_bytes INTEGER NOT NULL DEFAULT 0,
+                request_headers TEXT
             )
         """.trimIndent())
 
@@ -49,6 +50,9 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
             try { db.execSQL("ALTER TABLE tasks ADD COLUMN audio_url TEXT") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE tasks ADD COLUMN audio_bytes INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
         }
+        if (oldVersion < 4) {
+            try { db.execSQL("ALTER TABLE tasks ADD COLUMN request_headers TEXT") } catch (_: Exception) {}
+        }
     }
 
     @Synchronized
@@ -69,6 +73,7 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
             put("referer", task.referer)
             put("audio_url", task.audioUrl)
             put("audio_bytes", task.audioBytes)
+            put("request_headers", task.requestHeaders)
         }
         db.insertWithOnConflict("tasks", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -115,6 +120,7 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                 val referer = c.getColumnIndex("referer").takeIf { it >= 0 }?.let { c.getString(it) }
                 val audioUrl = c.getColumnIndex("audio_url").takeIf { it >= 0 }?.let { c.getString(it) }
                 val audioBytes = c.getColumnIndex("audio_bytes").takeIf { it >= 0 }?.let { c.getLong(it) } ?: 0L
+                val requestHeaders = c.getColumnIndex("request_headers").takeIf { it >= 0 }?.let { c.getString(it) }
 
                 val status = try {
                     DownloadStatus.valueOf(statusStr)
@@ -138,7 +144,8 @@ class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.
                     resolvedContentType = contentType,
                     referer = referer,
                     audioUrl = audioUrl,
-                    audioBytes = audioBytes
+                    audioBytes = audioBytes,
+                    requestHeaders = requestHeaders
                 )
 
                 // Load segments for this task

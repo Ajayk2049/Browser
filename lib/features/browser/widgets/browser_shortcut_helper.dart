@@ -41,12 +41,12 @@ class BrowserShortcutHelper {
     if (ok == true) await QuickLinksService.instance.removeQuickLink(item.id);
   }
 
-  static Future<void> openMediaGrabber(BuildContext context, List<DetectedMedia> items) {
+  static Future<void> openMediaGrabber(BuildContext context, List<DetectedMedia> items, {List<DetectedMedia> previews = const []}) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => MediaGrabberSheet(items: items),
+      builder: (_) => MediaGrabberSheet(items: items, previews: previews),
     );
   }
 

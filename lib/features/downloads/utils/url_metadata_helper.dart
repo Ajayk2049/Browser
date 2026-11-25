@@ -13,7 +13,7 @@ export '../models/url_metadata.dart';
 class UrlMetadataHelper {
   UrlMetadataHelper._();
 
-  static Future<UrlMetadata> resolve(String rawUrl, {String? referer}) async {
+  static Future<UrlMetadata> resolve(String rawUrl, {String? referer, Map<String, String>? headers}) async {
     final trimmed = rawUrl.trim();
     if (trimmed.isEmpty) return _fallback('download');
     if (trimmed.toLowerCase().startsWith('magnet:')) return _resolveMagnet(trimmed);
@@ -22,17 +22,22 @@ class UrlMetadataHelper {
     final ref = (referer?.isNotEmpty == true) ? referer : (uri?.host.isNotEmpty == true ? '${uri!.scheme}://${uri.host}/' : null);
 
     try {
-      final nativeRes = await DownloadService().probeUrl(trimmed, referer: ref);
+      final nativeRes = await DownloadService().probeUrl(trimmed, referer: ref, headers: headers);
       if (nativeRes != null) {
         final fUrl = (nativeRes['finalUrl'] as String?)?.isNotEmpty == true ? nativeRes['finalUrl'] as String : trimmed;
-        final cLen = (nativeRes['contentLength'] as num?)?.toInt() ?? -1;
+        final cType = (nativeRes['contentType'] as String? ?? '').toLowerCase();
+        final isPlaylist = cType.contains('mpegurl') || cType.contains('dash+xml') ||
+            fUrl.split('#').first.split('?').first.toLowerCase().endsWith('.m3u8') ||
+            fUrl.split('#').first.split('?').first.toLowerCase().endsWith('.mpd');
+        final cLen = isPlaylist ? -1 : ((nativeRes['contentLength'] as num?)?.toInt() ?? -1);
         final sName = nativeRes['suggestedFileName'] as String?;
-        final supRanges = nativeRes['supportsRanges'] as bool? ?? false;
+        final supRanges = isPlaylist ? true : (nativeRes['supportsRanges'] as bool? ?? false);
         final fUri = Uri.tryParse(fUrl) ?? uri;
         final rawName = sName ?? (fUri != null ? (_parseQueryParams(fUri) ?? _parsePathSegment(fUri)) : null);
         final cleanName = _cleanFileName(rawName ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
+        final ext = isPlaylist ? 'mp4' : _extractExtension(cleanName);
         if (Env.enableLogging) developer.log('NATIVE PROBE: url=$fUrl len=$cLen ranges=$supRanges name=$cleanName', name: 'Probe');
-        if (cLen > 0) return UrlMetadata(fileName: cleanName, fileExtension: _extractExtension(cleanName), totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
+        if (isPlaylist || cLen > 0) return UrlMetadata(fileName: cleanName, fileExtension: ext, totalBytes: cLen, supportsResume: supRanges, finalUrl: fUrl);
       }
     } catch (e) {
       if (Env.enableLogging) developer.log('Native probe fallback: $e', name: 'Probe');
@@ -42,8 +47,9 @@ class UrlMetadataHelper {
       final dio = DioClient.instance;
       final opt = Options(
         headers: <String, dynamic>{
+          if (headers != null) ...headers,
           'Range': 'bytes=0-0',
-          'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
+          'User-Agent': headers?['User-Agent'] ?? 'Mozilla/5.0 (Android; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0',
           'Accept': '*/*',
           if (ref != null && ref.isNotEmpty) 'Referer': ref,
         },
@@ -58,8 +64,8 @@ class UrlMetadataHelper {
       }
       try { final b = response.data; if (b is ResponseBody) unawaited(b.stream.listen(null).cancel()); } catch (_) {}
 
-      final headers = response.headers, finalUrl = response.realUri.toString(), code = response.statusCode ?? 0;
-      final cr = headers.value('content-range'), clRaw = int.tryParse(headers.value('content-length') ?? '') ?? -1;
+      final respHeaders = response.headers, finalUrl = response.realUri.toString(), code = response.statusCode ?? 0;
+      final cr = respHeaders.value('content-range'), clRaw = int.tryParse(respHeaders.value('content-length') ?? '') ?? -1;
       int len = -1;
       if (cr != null && cr.contains('/')) len = int.tryParse(cr.substring(cr.lastIndexOf('/') + 1).trim()) ?? -1;
       if (len <= 0 && (clRaw > 1 || code == 200)) len = clRaw;
@@ -73,9 +79,9 @@ class UrlMetadataHelper {
         } catch (_) {}
       }
 
-      final String? name = _parseContentDisposition(headers.value('content-disposition')) ?? _parseQueryParams(response.realUri) ?? _parsePathSegment(response.realUri);
+      final String? name = _parseContentDisposition(respHeaders.value('content-disposition')) ?? _parseQueryParams(response.realUri) ?? _parsePathSegment(response.realUri);
       final cleanName = _cleanFileName(name ?? 'download_${DateTime.now().millisecondsSinceEpoch}');
-      final resume = headers.value('accept-ranges')?.toLowerCase().contains('bytes') == true || cr != null;
+      final resume = respHeaders.value('accept-ranges')?.toLowerCase().contains('bytes') == true || cr != null;
       return UrlMetadata(fileName: cleanName, fileExtension: _extractExtension(cleanName), totalBytes: len, supportsResume: resume, finalUrl: finalUrl);
     } catch (e) {
       if (Env.enableLogging) developer.log('Probe exception: $e', name: 'Probe');

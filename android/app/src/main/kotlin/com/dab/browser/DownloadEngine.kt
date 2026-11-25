@@ -16,6 +16,7 @@ class DownloadEngine(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isPaused = AtomicBoolean(false); private val isCanceled = AtomicBoolean(false)
     private val audioDownloadedBytes = AtomicLong(0L)
+    private val extraHeaders: Map<String, String> by lazy { DownloadHttpHelper.parseHeadersJson(task.requestHeaders) }
     private val throttleLock = Any(); private var downloadJob: Job? = null
     @Volatile var speedLimitBytesPerSec: Long = task.speedLimitBytesPerSec
     private var lastThrottleTime = System.currentTimeMillis(); private var bytesInWindow = 0L
@@ -39,16 +40,40 @@ class DownloadEngine(
     fun pause() { isPaused.set(true); downloadJob?.cancel(); task.status = DownloadStatus.PAUSED; task.speedBytesPerSec = 0L; onSaveSegments?.invoke(task.segments); onProgressUpdate(task) }
     fun cancel() {
         isCanceled.set(true); downloadJob?.cancel(); task.status = DownloadStatus.CANCELED; task.speedBytesPerSec = 0L
-        try { File("${task.destinationPath}.part").delete(); File("${task.destinationPath}.audio.part").delete() } catch (_: Exception) {}
+        try {
+            File("${task.destinationPath}.part").delete()
+            File("${task.destinationPath}.audio.part").delete()
+            File("${task.destinationPath}.segs").deleteRecursively()
+        } catch (_: Exception) {}
         onProgressUpdate(task)
     }
 
     private suspend fun executeDownload() = withContext(Dispatchers.IO) {
-        val isYt = task.url.contains("googlevideo.com") || task.audioUrl != null || (task.finalUrl?.contains("googlevideo.com") == true)
+        val isYt = task.url.contains("googlevideo.com") || (task.finalUrl?.contains("googlevideo.com") == true) || (task.referer?.contains("youtube.com") == true)
+        if (!isYt && PlaylistDownloadHelper.isPlaylist(task.url, task.resolvedContentType)) {
+            val speedTracker = launch { trackSpeed() }
+            try {
+                val ok = PlaylistDownloadHelper.download(task, extraHeaders, isPaused, isCanceled) { onProgressUpdate(task) }
+                if (ok && !isPaused.get() && !isCanceled.get()) {
+                    task.status = DownloadStatus.COMPLETED; task.speedBytesPerSec = 0L; onProgressUpdate(task)
+                }
+            } finally { speedTracker.cancel() }
+            return@withContext
+        }
         if (task.totalBytes <= 0 || task.segments.isEmpty() || task.finalUrl == null) {
             if (!isYt || task.totalBytes <= 0) {
-                val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer)
+                val probe = DownloadHttpHelper.probeUrl(task.finalUrl ?: task.url, task.referer, extraHeaders)
                 task.finalUrl = probe.finalUrl; task.resolvedContentType = probe.contentType
+                if (!isYt && PlaylistDownloadHelper.isPlaylist(probe.finalUrl, probe.contentType)) {
+                    val speedTracker = launch { trackSpeed() }
+                    try {
+                        val ok = PlaylistDownloadHelper.download(task, extraHeaders, isPaused, isCanceled) { onProgressUpdate(task) }
+                        if (ok && !isPaused.get() && !isCanceled.get()) {
+                            task.status = DownloadStatus.COMPLETED; task.speedBytesPerSec = 0L; onProgressUpdate(task)
+                        }
+                    } finally { speedTracker.cancel() }
+                    return@withContext
+                }
                 if (task.totalBytes <= 0 && probe.contentLength > 0) task.totalBytes = probe.contentLength + task.audioBytes
                 if (!probe.suggestedFileName.isNullOrBlank()) {
                     val cur = File(task.destinationPath)
@@ -124,7 +149,7 @@ class DownloadEngine(
         val raf = RandomAccessFile(destFile, "rw")
         return try {
             val totalAudio = if (task.audioBytes > 0) task.audioBytes else {
-                val probe = DownloadHttpHelper.probeUrl(audioUrl, task.referer)
+                val probe = DownloadHttpHelper.probeUrl(audioUrl, task.referer, extraHeaders)
                 if (probe.contentLength > 0) { task.audioBytes = probe.contentLength; probe.contentLength } else -1L
             }
             var downloaded = destFile.length()
@@ -258,7 +283,7 @@ class DownloadEngine(
                     else -> null
                 }
                 Log.d("DLREFRESH", "$label req ${task.id} range=$rangeHeader single=true (isYt=$isYt cur=$cur)")
-                val stream = DownloadHttpHelper.openStream(urlProvider(), rangeHeader = rangeHeader, referer = task.referer)
+                val stream = DownloadHttpHelper.openStream(urlProvider(), rangeHeader = rangeHeader, referer = task.referer, extraHeaders = extraHeaders)
                 activeStream = stream
                 lastDataAt = System.currentTimeMillis()
                 Log.d("DLREFRESH", "$label resp ${task.id} code=${stream.code}")

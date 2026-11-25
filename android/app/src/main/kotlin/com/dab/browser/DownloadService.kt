@@ -78,13 +78,14 @@ class DownloadService : Service() {
         }
     }
 
-    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L, audioUrl: String? = null, audioBytes: Long = 0L) {
+    fun startDownload(taskId: String, url: String, destinationPath: String, segmentsCount: Int = 8, startNow: Boolean = true, referer: String? = null, totalBytes: Long = -1L, audioUrl: String? = null, audioBytes: Long = 0L, requestHeaders: String? = null) {
         val isTor = TorrentEngine.isMagnetOrTorrent(url); val isYt = url.contains("googlevideo.com") || audioUrl != null
         val finalSegs = if (isYt) 1 else segmentsCount
-        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, finalSegs, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes) }
+        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, finalSegs, speedLimitBytesPerSec = globalSpeedLimitBytesPerSec, isTorrent = isTor, referer = referer, totalBytes = totalBytes, audioUrl = audioUrl, audioBytes = audioBytes, requestHeaders = requestHeaders) }
         if (totalBytes > 0 && task.totalBytes <= 0) task.totalBytes = totalBytes
         if (referer != null) task.referer = referer; if (audioUrl != null) task.audioUrl = audioUrl
         if (audioBytes > 0 && task.audioBytes <= 0) task.audioBytes = audioBytes
+        if (!requestHeaders.isNullOrBlank()) task.requestHeaders = requestHeaders
         db.upsertTask(task)
         if (startNow) enqueueTask(task) else { task.status = DownloadStatus.PAUSED; dispatchProgress(task, isStateChange = true) }
     }
@@ -216,6 +217,7 @@ class DownloadService : Service() {
                     val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively()
                     val p = File("${it.destinationPath}.part"); if (p.exists()) p.delete()
                     val ap = File("${it.destinationPath}.audio.part"); if (ap.exists()) ap.delete()
+                    val segs = File("${it.destinationPath}.segs"); if (segs.exists()) segs.deleteRecursively()
                 } catch (_: Exception) {}
             }
         }

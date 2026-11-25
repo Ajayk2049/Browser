@@ -74,16 +74,22 @@ class MainActivity : FlutterActivity() {
                     val audioUrl = call.argument<String>("audioUrl")
                     val audioBytes = (call.argument<Number>("audioBytes"))?.toLong() ?: 0L
                     val totalBytes = (call.argument<Number>("totalBytes"))?.toLong() ?: -1L
+                    val rawHeaders = call.argument<Any?>("requestHeaders")
+                    val reqHeadersJson = when (rawHeaders) {
+                        is String -> rawHeaders.takeIf { it.isNotBlank() }
+                        is Map<*, *> -> org.json.JSONObject(rawHeaders.filterKeys { it != null }.mapKeys { it.key.toString() }.mapValues { it.value?.toString() ?: "" }).toString()
+                        else -> null
+                    }
                     if (id.isNotEmpty() && url.isNotEmpty() && dest.isNotEmpty()) {
                         if (downloadService != null) {
-                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes)
+                            downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes, reqHeadersJson)
                         } else {
                             CoroutineScope(Dispatchers.Main).launch {
                                 for (i in 0 until 30) {
                                     if (downloadService != null) break
                                     delay(100)
                                 }
-                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes)
+                                downloadService?.startDownload(id, url, dest, segs, startNow, ref, totalBytes, audioUrl, audioBytes, reqHeadersJson)
                             }
                         }
                         result.success(true)
@@ -108,12 +114,30 @@ class MainActivity : FlutterActivity() {
                 "probeUrl" -> {
                     val url = call.argument<String>("url") ?: ""
                     val ref = call.argument<String>("referer")
+                    val rawHeaders = call.argument<Map<*, *>>("headers")
+                    val extraHeaders = rawHeaders?.mapNotNull { (k, v) -> if (k is String && v != null) k to v.toString() else null }?.toMap() ?: emptyMap()
                     if (url.isNotEmpty()) {
                         CoroutineScope(Dispatchers.IO).launch {
-                            val probe = DownloadHttpHelper.probeUrl(url, ref)
+                            val probe = DownloadHttpHelper.probeUrl(url, ref, extraHeaders)
                             runOnUiThread { result.success(probe.toMap()) }
                         }
                     } else result.error("INVALID_ARGS", "Missing url", null)
+                }
+                "inspectPlaylist" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    val ref = call.argument<String>("referer")
+                    val rawHeaders = call.argument<Map<*, *>>("headers")
+                    val extraHeaders = rawHeaders?.mapNotNull { (k, v) -> if (k is String && v != null) k to v.toString() else null }?.toMap() ?: emptyMap()
+                    if (url.isNotEmpty()) {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            try {
+                                val list = PlaylistDownloadHelper.inspectVariants(url, ref, extraHeaders)
+                                runOnUiThread { result.success(list) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.success(emptyList<Map<String, Any?>>()) }
+                            }
+                        }
+                    } else result.success(emptyList<Map<String, Any?>>())
                 }
                 "getDiskSpace" -> {
                     val path = call.argument<String>("path") ?: getExternalFilesDir(null)?.path ?: filesDir.path

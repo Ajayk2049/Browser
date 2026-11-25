@@ -1,4 +1,4 @@
-﻿package com.dab.browser
+package com.dab.browser
 
 import android.app.AlertDialog
 import android.content.Context
@@ -147,6 +147,24 @@ class ExtensionManager(
                     is Map<*, *> -> message[key] as? Boolean ?: false
                     else -> false
                 }
+                fun num(key: String): Long = when (message) {
+                    is org.json.JSONObject -> message.optLong(key, -1L)
+                    is Map<*, *> -> (message[key] as? Number)?.toLong() ?: -1L
+                    else -> -1L
+                }
+                fun strMap(key: String): Map<String, String> {
+                    val out = mutableMapOf<String, String>()
+                    val raw: Any? = when (message) {
+                        is org.json.JSONObject -> message.optJSONObject(key)
+                        is Map<*, *> -> message[key]
+                        else -> null
+                    }
+                    when (raw) {
+                        is org.json.JSONObject -> raw.keys().forEach { k -> out[k] = raw.optString(k, "") }
+                        is Map<*, *> -> raw.forEach { (k, v) -> if (k is String && v != null) out[k] = v.toString() }
+                    }
+                    return out
+                }
                 if (message !is org.json.JSONObject && message !is Map<*, *>) return null
                 val type = str("type").ifEmpty { "media" }
                 if (type == "hello") {
@@ -158,10 +176,28 @@ class ExtensionManager(
                     return null
                 }
                 val url = str("url")
+                if (url.isEmpty()) return null
+                if (type == "aes_key") {
+                    PlaylistKeyCache.remember(url, strMap("headers"))
+                    return null
+                }
                 val pageUrl = str("pageUrl")
                 val itag = str("itag")
                 val mime = str("mime")
-                if (url.isNotEmpty()) {
+                if (type == "generic") {
+                    forwardSniffedGeneric(
+                        url = url,
+                        pageUrl = pageUrl,
+                        originUrl = str("originUrl"),
+                        mime = mime,
+                        mediaType = str("mediaType").ifEmpty { "video" },
+                        format = str("format"),
+                        filename = str("filename"),
+                        size = num("size"),
+                        headers = strMap("headers"),
+                        isPreview = bool("isPreview")
+                    )
+                } else {
                     Log.d("ExtDebug", "Sniffed itag=$itag url=${url.take(400)}")
                     forwardSniffed(url, pageUrl, itag, mime)
                 }
@@ -176,6 +212,34 @@ class ExtensionManager(
         runOnUiThread {
             channel.invokeMethod("onSniffedMedia", mapOf(
                 "url" to url, "pageUrl" to pageUrl, "itag" to itag, "mime" to mime
+            ))
+        }
+    }
+
+    private fun forwardSniffedGeneric(
+        url: String,
+        pageUrl: String,
+        originUrl: String,
+        mime: String,
+        mediaType: String,
+        format: String,
+        filename: String,
+        size: Long,
+        headers: Map<String, String>,
+        isPreview: Boolean = false
+    ) {
+        runOnUiThread {
+            channel.invokeMethod("onSniffedGeneric", mapOf(
+                "url" to url,
+                "pageUrl" to pageUrl,
+                "originUrl" to originUrl,
+                "mime" to mime,
+                "mediaType" to mediaType,
+                "format" to format,
+                "filename" to filename,
+                "size" to size,
+                "headers" to headers,
+                "isPreview" to isPreview
             ))
         }
     }

@@ -18,7 +18,7 @@ class WebExtensionService extends ChangeNotifier {
     if (call.method == 'onExtensionsChanged') {
       debugPrint('WebExtensionService: onExtensionsChanged received');
       await refreshInstalled();
-    } else if (call.method == 'onSniffedMedia') {
+    } else if (call.method == 'onSniffedMedia' || call.method == 'onSniffedGeneric') {
       MediaSnifferService.instance.handleNativeCall(call);
     }
   }

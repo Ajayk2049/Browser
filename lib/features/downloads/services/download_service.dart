@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -154,6 +154,7 @@ class DownloadService {
     required String taskId, required String url, required String destinationPath, int segmentsCount = 8,
     bool startNow = true, String? referer, int? totalBytes, String? audioUrl, int? audioBytes,
     String? videoId, String? videoItag, String? audioItag, bool audioOnly = false,
+    Map<String, String>? headers,
   }) async {
     final vId = videoId ?? YoutubeGrabberService.extractVideoId(url, referer: referer);
     final isYt = vId != null || url.contains('googlevideo.com') || audioUrl != null;
@@ -173,6 +174,7 @@ class DownloadService {
       final success = await _methodChannel.invokeMethod<bool>('startDownload', {
         'taskId': taskId, 'url': url, 'destinationPath': destinationPath, 'segmentsCount': segmentsCount,
         'startNow': startNow, 'referer': ?referer, 'totalBytes': ?totalBytes, 'audioUrl': ?audioUrl, 'audioBytes': ?audioBytes,
+        if (headers != null && headers.isNotEmpty) 'requestHeaders': headers,
       });
       return success ?? false;
     } catch (e) {
@@ -190,7 +192,26 @@ class DownloadService {
 
   Future<String?> getPublicDownloadDirectory() async => _methodChannel.invokeMethod<String>('getPublicDownloadDirectory');
   Future<bool> requestStoragePermission() async => (await _methodChannel.invokeMethod<bool>('requestStoragePermission')) ?? true;
-  Future<Map<String, dynamic>?> probeUrl(String url, {String? referer}) async => _methodChannel.invokeMapMethod<String, dynamic>('probeUrl', {'url': url, 'referer': ?referer});
+  Future<Map<String, dynamic>?> probeUrl(String url, {String? referer, Map<String, String>? headers}) async =>
+      _methodChannel.invokeMapMethod<String, dynamic>('probeUrl', {
+        'url': url,
+        'referer': ?referer,
+        if (headers != null && headers.isNotEmpty) 'headers': headers,
+      });
+
+  Future<List<Map<String, dynamic>>> inspectPlaylist(String url, {String? referer, Map<String, String>? headers}) async {
+    try {
+      final raw = await _methodChannel.invokeMethod<List<dynamic>>('inspectPlaylist', {
+        'url': url,
+        'referer': ?referer,
+        if (headers != null && headers.isNotEmpty) 'headers': headers,
+      });
+      if (raw == null) return const [];
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
   Future<bool> pauseDownload(String taskId) async {
     final p = _ytPending[taskId];
     if (p != null) {
