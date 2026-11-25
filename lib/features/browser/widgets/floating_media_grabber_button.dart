@@ -6,18 +6,20 @@ import '../../../theme/tokens/app_radius.dart';
 /// Adheres strictly to monochrome design principles and rules.md §13, §29.2 (< 150 lines).
 class FloatingMediaGrabberButton extends StatelessWidget {
   final int count;
+  final bool loading;
   final VoidCallback onTap;
 
   const FloatingMediaGrabberButton({
     super.key,
     required this.count,
     required this.onTap,
+    this.loading = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isVisible = count > 0;
+    final isVisible = count > 0 || loading;
 
     final bg = isDark ? const Color(0xFF161B26) : Colors.white;
     final border = isDark ? const Color(0xFF272E3F) : const Color(0xFFE2E8F0);
@@ -62,22 +64,31 @@ class FloatingMediaGrabberButton extends StatelessWidget {
                     color: iconColor,
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
-                    child: Text(
-                      count > 9 ? '9+' : '$count',
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: badgeFg,
+                  if (loading || count > 0) ...[
+                    if (loading)
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: iconColor),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Text(
+                          count > 9 ? '9+' : '$count',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: badgeFg,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),

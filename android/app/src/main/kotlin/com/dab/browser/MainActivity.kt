@@ -166,13 +166,16 @@ class MainActivity : FlutterActivity() {
                         }.getOrDefault(false)
                     )
                 }
-                "registerExternalTask" -> {                    val id = call.argument<String>("taskId") ?: ""
-                    val url = call.argument<String>("url") ?: ""
-                    val path = call.argument<String>("destinationPath") ?: ""
-                    val bytes = (call.argument<Number>("totalBytes"))?.toLong() ?: 0L
-                    val ds = downloadService
-                    if (id.isEmpty() || path.isEmpty() || ds == null) result.success(false)
-                    else { ds.registerExternalTask(id, url, path, bytes); result.success(true) }
+                "mintPoToken" -> {
+                    val identifier = call.argument<String>("identifier") ?: ""
+                    if (identifier.isEmpty()) {
+                        result.success(null)
+                    } else {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val pot = PoTokenProvider.mint(applicationContext, identifier)
+                            withContext(Dispatchers.Main) { result.success(pot) }
+                        }
+                    }
                 }
                 "failDownload" -> {                    val id = call.argument<String>("taskId") ?: ""; val reason = call.argument<String>("reason") ?: "Download failed"
                     DownloadService.allTasks[id]?.let { it.status = DownloadStatus.FAILED; it.errorMessage = reason; downloadService?.db?.upsertTask(it); DownloadService.dispatchProgress(it, isStateChange = true) }

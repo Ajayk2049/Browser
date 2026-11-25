@@ -67,27 +67,27 @@ object MediaMuxerHelper {
             val buffer = ByteBuffer.allocate(bufferSize)
             val info = MediaCodec.BufferInfo()
 
-            var firstVideoPts = -1L
+            var videoBasePts = -1L
             while (true) {
                 info.offset = 0
                 info.size = videoExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
                 val sampleTime = videoExtractor.sampleTime
-                if (firstVideoPts < 0) firstVideoPts = sampleTime
-                info.presentationTimeUs = (sampleTime - firstVideoPts).coerceAtLeast(0L)
+                if (videoBasePts < 0) videoBasePts = if (sampleTime > 1_000_000L) sampleTime else 0L
+                info.presentationTimeUs = (sampleTime - videoBasePts).coerceAtLeast(0L)
                 info.flags = videoExtractor.sampleFlags
                 muxer.writeSampleData(muxerVideo, buffer, info)
                 videoExtractor.advance()
             }
 
-            var firstAudioPts = -1L
+            var audioBasePts = -1L
             while (true) {
                 info.offset = 0
                 info.size = audioExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
                 val sampleTime = audioExtractor.sampleTime
-                if (firstAudioPts < 0) firstAudioPts = sampleTime
-                info.presentationTimeUs = (sampleTime - firstAudioPts).coerceAtLeast(0L)
+                if (audioBasePts < 0) audioBasePts = if (sampleTime > 1_000_000L) sampleTime else 0L
+                info.presentationTimeUs = (sampleTime - audioBasePts).coerceAtLeast(0L)
                 info.flags = audioExtractor.sampleFlags
                 muxer.writeSampleData(muxerAudio, buffer, info)
                 audioExtractor.advance()

@@ -46,11 +46,12 @@ class StreamResponse(
 object DownloadHttpHelper {
     private const val TAG = "DownloadHttp"
     const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    // Must match the InnerTube client that minted the URL — googlevideo 403s mismatches.
-    const val ANDROID_YT_USER_AGENT = "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip"
-    const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12; eureka-user 4.32.20 Build/SQ3D.220605.009.A1) gzip"
-    const val TVHTML5_USER_AGENT = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version,gzip(gfe)"
-    const val IOS_YT_USER_AGENT = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+    // Must match the Snaptube ClientConfig that minted the URL — googlevideo 403s mismatches.
+    const val ANDROID_YT_USER_AGENT = "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip"
+    const val ANDROID_VR_USER_AGENT = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+    const val TVHTML5_USER_AGENT = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
+    const val IOS_YT_USER_AGENT = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+    const val VISIONOS_YT_USER_AGENT = "com.google.visionos.youtube/1.02(RealityDevice14,1; U; CPU visionOS 25_6_0 like Mac OS X;)"
 
     /** Set by GeckoRuntimeProvider: the browser's real UA. Web-session URLs
      *  (sniffed from the page's own player) must be fetched with this. */
@@ -85,12 +86,13 @@ object DownloadHttpHelper {
             // Pick the UA of the InnerTube client that minted this URL (its c= param).
             // Order matters: c=ANDROID_VR also contains c=ANDROID.
             val ua = when {
+                current.contains("c=VISIONOS") -> VISIONOS_YT_USER_AGENT
                 current.contains("c=ANDROID_VR") -> ANDROID_VR_USER_AGENT
                 isYt && current.contains("c=ANDROID") -> ANDROID_YT_USER_AGENT
                 current.contains("c=TVHTML5") -> TVHTML5_USER_AGENT
                 current.contains("c=IOS") -> IOS_YT_USER_AGENT
-                current.contains("c=WEB") -> browserUserAgent ?: USER_AGENT
-                isYt -> ANDROID_YT_USER_AGENT
+                current.contains("c=WEB") || current.contains("c=MWEB") -> browserUserAgent ?: USER_AGENT
+                isYt -> IOS_YT_USER_AGENT
                 else -> USER_AGENT
             }
             val ref = when {
@@ -106,6 +108,7 @@ object DownloadHttpHelper {
                 .header("User-Agent", ua)
                 .header("Accept", "*/*")
                 .header("Accept-Encoding", "identity")
+            if (isYt || host.contains("youtube.com")) reqBuilder.header("Cookie", "SOCS=CAE=")
             if (ref != null) reqBuilder.header("Referer", ref)
             if (rangeHeader != null) reqBuilder.header("Range", rangeHeader)
 
@@ -129,9 +132,16 @@ object DownloadHttpHelper {
     }
 
     fun probeUrl(urlStr: String, referer: String? = null): ProbeResult = try {
+        val isYt = urlStr.contains("googlevideo.com")
+        if (isYt) {
+            val clenParam = Regex("[?&]clen=(\\d+)").find(urlStr)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+            if (clenParam > 0) {
+                return ProbeResult(urlStr, clenParam, true, "video/mp4", null, null)
+            }
+        }
         val webSession = isWebSessionUrl(urlStr)
-        val target = if (webSession) "${urlStr}&range=0-0" else urlStr
-        val stream = openStream(target, rangeHeader = if (webSession) null else "bytes=0-0", referer = referer, method = "GET")
+        val range = if (isYt || webSession) null else "bytes=0-0"
+        val stream = openStream(urlStr, rangeHeader = range, referer = referer, method = "GET")
         stream.use { s ->
             val finalUrl = s.finalUrl
             val cType = s.header("Content-Type")?.lowercase(Locale.ROOT)

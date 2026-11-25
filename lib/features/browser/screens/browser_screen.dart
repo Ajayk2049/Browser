@@ -43,6 +43,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _isPrivateMode = false, _isFindInPageVisible = false;
   late String _activeTabId;
   String? _lastCheckedVideoId;
+  String? _detectingVideoId;
+  bool _isDetectingMedia = false;
   int _tabSequence = 0, _findCurrent = 0, _findTotal = 0;
   String _findQuery = '';
 
@@ -206,7 +208,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _toggleBookmark() => BrowserShortcutHelper.toggleBookmark(context, _activeTab); void _sharePage() => BrowserShortcutHelper.sharePage(_activeTab.url, _activeTab.title);
-  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title); void _openMediaGrabber() => BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+  void _openPageSecurity() => PageSecuritySheet.show(context, url: _activeTab.url, title: _activeTab.title);
+  Future<void> _openMediaGrabber() async {
+    // Nothing resolved yet (yt-dlp still warming up, or the probe failed):
+    // tapping the pill retries instead of opening an empty sheet.
+    if (_detectedMedia.isEmpty) {
+      final vid = YoutubeGrabberService.extractVideoId(_activeTab.url);
+      if (vid != null) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger..hideCurrentSnackBar()..showSnackBar(const SnackBar(
+          content: Text('Finding downloadable streams…'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ));
+        if (_detectingVideoId == vid) return; // probe already running
+        await _checkYouTube(_activeTab.url);
+        if (!mounted) return;
+        if (_detectedMedia.isEmpty) {
+          messenger..hideCurrentSnackBar()..showSnackBar(const SnackBar(
+            content: Text('No downloadable streams found. Tap again to retry.'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 3),
+          ));
+          return;
+        }
+      }
+    }
+    if (!mounted) return;
+    BrowserShortcutHelper.openMediaGrabber(context, _detectedMedia);
+  }
   void _handleMediaDetected(String u, String t, String typ) {
     if (YoutubeGrabberService.isYouTubeUrl(_activeTab.url) || _detectedMedia.any((m) => m.url == u)) return;
     setState(() => _detectedMedia.add(DetectedMedia(url: u, title: t.isNotEmpty && t != _homeUrl ? t : 'Media Stream ${_detectedMedia.length + 1}', type: typ)));
@@ -214,18 +244,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _onUrlUpdated(String u) {
     setState(() => _urlController.text = u);
     final vid = YoutubeGrabberService.extractVideoId(u);
-    if (vid == _lastCheckedVideoId && _detectedMedia.isNotEmpty) return;
+    // Same video (YouTube re-writes the query string on SPA navigation):
+    // keep the streams we already resolved instead of clearing + re-probing.
+    if (vid == _lastCheckedVideoId) return;
     _lastCheckedVideoId = vid;
     if (vid == null) { if (_detectedMedia.isNotEmpty) setState(_detectedMedia.clear); return; }
     setState(_detectedMedia.clear);
     _checkYouTube(u);
   }
+  bool get _isDetecting => _isDetectingMedia && _detectingVideoId == YoutubeGrabberService.extractVideoId(_activeTab.url);
   Future<void> _checkYouTube(String u) async {
     final vid = YoutubeGrabberService.extractVideoId(u);
-    if (vid == null && !YoutubeGrabberService.isYouTubeUrl(u)) return;
-    final list = await YoutubeGrabberService.instance.extractStreams(u);
-    if (!mounted || vid != _lastCheckedVideoId) return;
-    if (list.isNotEmpty) setState(() {
+    if (vid == null) return;
+    if (_detectingVideoId == vid) return; // probe already in flight
+    _detectingVideoId = vid;
+    _lastCheckedVideoId = vid;
+    if (mounted) setState(() => _isDetectingMedia = true);
+    List<DetectedMedia> list;
+    try {
+      list = await YoutubeGrabberService.instance.extractStreams(u);
+    } catch (_) {
+      list = const [];
+    } finally {
+      if (_detectingVideoId == vid) _detectingVideoId = null;
+      if (mounted) setState(() => _isDetectingMedia = _detectingVideoId != null);
+    }
+    if (!mounted || list.isEmpty) return;
+    // Results only apply while this is still the active video.
+    if (YoutubeGrabberService.extractVideoId(_activeTab.url) != vid) return;
+    setState(() {
       for (final i in list) {
         // Sniffed (page-session) items win over API-derived ones for the same itag.
         if (_detectedMedia.any((m) => m.sniffed && m.videoItag == i.videoItag && m.videoId == vid)) continue;
@@ -305,7 +352,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                 ],
               ),
-              if (!_activeTab.isHome) FloatingMediaGrabberButton(count: _detectedMedia.length, onTap: _openMediaGrabber),
+              if (!_activeTab.isHome && (_detectedMedia.isNotEmpty || YoutubeGrabberService.extractVideoId(_activeTab.url) != null))
+                FloatingMediaGrabberButton(count: _detectedMedia.length, loading: _isDetecting, onTap: _openMediaGrabber),
             ],
           ),
         ),

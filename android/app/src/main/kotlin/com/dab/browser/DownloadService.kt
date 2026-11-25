@@ -8,6 +8,7 @@ import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.File
@@ -62,7 +63,12 @@ class DownloadService : Service() {
     override fun onTimeout(startId: Int, fgsType: Int) {
         pauseAll(); allTasks.values.forEach { db.upsertTask(it) }
         notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloads Paused", "System time limit reached. Tap in app to resume.", 0, 0))
-        stopForeground(STOP_FOREGROUND_DETACH); stopSelf(startId)
+        releaseWakeLock(); stopForeground(STOP_FOREGROUND_DETACH); stopSelf(startId)
+    }
+
+    override fun onDestroy() {
+        releaseWakeLock()
+        super.onDestroy()
     }
 
     private fun loadSavedTasks(database: DownloadDatabase) {
@@ -84,24 +90,6 @@ class DownloadService : Service() {
     }
 
     private fun getHost(url: String): String = try { java.net.URL(url).host } catch (_: Exception) { "" }
-    /// Records a download that was performed outside the native engine (the
-    /// bundled yt-dlp extractor) so it appears in the Downloads list and
-    /// survives a restart.
-    fun registerExternalTask(taskId: String, url: String, destinationPath: String, totalBytes: Long) {
-        val size = if (totalBytes > 0) totalBytes else
-            runCatching { java.io.File(destinationPath).length() }.getOrDefault(0L)
-        val task = allTasks.getOrPut(taskId) { DownloadTask(taskId, url, destinationPath, 1) }
-        task.destinationPath = destinationPath
-        task.finalUrl = url
-        task.totalBytes = size
-        task.downloadedBytes = size
-        task.speedBytesPerSec = 0L
-        task.status = DownloadStatus.COMPLETED
-        task.errorMessage = null
-        db.upsertTask(task)
-        dispatchProgress(task, isStateChange = true)
-        Log.i("DLREFRESH", "registerExternalTask: $taskId -> $destinationPath ($size bytes)")
-    }
 
     @Synchronized
     private fun enqueueTask(task: DownloadTask, forceRestart: Boolean = false) {
@@ -116,6 +104,25 @@ class DownloadService : Service() {
     }
 
     private var isForegroundActive = false
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DabBrowser::DownloadWakeLock")?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld == false) wakeLock?.acquire(60 * 60 * 1000L)
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
+    }
 
     private fun launchEngine(task: DownloadTask, forceRestart: Boolean = false) {
         taskQueue.remove(task.id); ensureForegroundStarted()
@@ -161,8 +168,13 @@ class DownloadService : Service() {
                 for (i in 0 until cnt) task.segments.add(DownloadSegment(i, i * chunk, if (i == cnt - 1) newStreamLen - 1 else (i + 1) * chunk - 1))
             }
         } else {
-            task.segments.clear(); val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
-            task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE))
+            task.segments.clear()
+            val streamLen = if (task.audioBytes > 0 && task.totalBytes > task.audioBytes) task.totalBytes - task.audioBytes else task.totalBytes
+            val partLen = File("${task.destinationPath}.part").length().coerceAtLeast(0L)
+            val audioLen = File("${task.destinationPath}.audio.part").length().coerceAtLeast(0L)
+            val videoResume = if (streamLen > 0) partLen.coerceAtMost(streamLen) else partLen
+            task.segments.add(DownloadSegment(0, 0, if (streamLen > 0) streamLen - 1 else Long.MAX_VALUE, videoResume))
+            task.downloadedBytes = videoResume + audioLen
         }
         task.url = newUrl; task.finalUrl = newUrl; if (newAudioUrl != null) task.audioUrl = newAudioUrl
         task.status = DownloadStatus.CONNECTING; db.upsertTask(task); dispatchProgress(task, isStateChange = true)
@@ -200,7 +212,11 @@ class DownloadService : Service() {
         task?.let {
             it.status = DownloadStatus.CANCELED; dispatchProgress(it, isStateChange = true)
             if (deleteFile && it.destinationPath.isNotEmpty()) {
-                try { val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively(); val p = File("${it.destinationPath}.part"); if (p.exists()) p.delete() } catch (_: Exception) {}
+                try {
+                    val f = File(it.destinationPath); if (f.exists()) f.deleteRecursively()
+                    val p = File("${it.destinationPath}.part"); if (p.exists()) p.delete()
+                    val ap = File("${it.destinationPath}.audio.part"); if (ap.exists()) ap.delete()
+                } catch (_: Exception) {}
             }
         }
         db.deleteTask(taskId); processQueue(); checkAutoStop()
@@ -224,7 +240,7 @@ class DownloadService : Service() {
     private fun checkAutoStop() {
         val hasActive = activeEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) } || activeTorrentEngines.values.any { it.task.status in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.CONNECTING) }
         if (!hasActive && taskQueue.isEmpty() && isForegroundActive) {
-            stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false
+            releaseWakeLock(); stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false
         }
     }
 
@@ -232,10 +248,11 @@ class DownloadService : Service() {
         try { ensureForegroundStarted(); notificationManager.notify(NOTIFICATION_ID, buildNotification(title, text, max, progress)) } catch (_: Exception) {}
     }
     fun stopForegroundCustom() {
-        try { stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false } catch (_: Exception) {}
+        try { releaseWakeLock(); stopForeground(STOP_FOREGROUND_REMOVE); notificationManager.cancel(NOTIFICATION_ID); isForegroundActive = false } catch (_: Exception) {}
     }
 
     private fun ensureForegroundStarted() {
+        acquireWakeLock()
         if (!isForegroundActive) {
             try {
                 createNotificationChannel(); val n = buildNotification("Downloading", "Preparing download...", 0, 0)
