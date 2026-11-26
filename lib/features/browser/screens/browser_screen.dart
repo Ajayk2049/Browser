@@ -201,12 +201,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _openBookmarks() async { final u = await context.push<String>('/bookmarks'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
   Future<void> _openHistory() async { final u = await context.push<String>('/history'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
+  Future<void> _openSettings() async { final u = await context.push<String>('/settings'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
 
   void _handleMenuAction(BrowserMenuAction action) {
     if (action == BrowserMenuAction.findInPage) {
       if (_activeTab.isHome) ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
       else setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
-    } else if (action == BrowserMenuAction.settings) context.push('/settings');
+    } else if (action == BrowserMenuAction.settings) _openSettings();
     else if (action == BrowserMenuAction.downloadManager) context.push('/downloads');
     else if (action == BrowserMenuAction.bookmarks) _openBookmarks();
     else if (action == BrowserMenuAction.history) _openHistory();

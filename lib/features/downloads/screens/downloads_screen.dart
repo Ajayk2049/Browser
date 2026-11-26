@@ -17,7 +17,7 @@ import '../widgets/download_task_card.dart';
 import 'direct_download_details_screen.dart';
 import 'torrent_details_screen.dart';
 
-enum DownloadFilter { all, media, documents, archives }
+enum DownloadFilter { all, completed, pending, media, documents, archives }
 
 /// Revamped B&W 1DM+ download manager displaying only real user downloads.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 300 lines).
@@ -143,6 +143,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
     switch (_selectedFilter) {
       case DownloadFilter.all: return list;
+      case DownloadFilter.completed: return list.where((t) => t.status == DownloadStatus.completed).toList();
+      case DownloadFilter.pending: return list.where((t) => t.status != DownloadStatus.completed && t.status != DownloadStatus.canceled).toList();
       case DownloadFilter.media: return list.where((t) => matchExt(t, ['.mp3', '.flac', '.wav', '.mp4', '.mkv'])).toList();
       case DownloadFilter.documents: return list.where((t) => matchExt(t, ['.pdf', '.doc', '.docx', '.txt'])).toList();
       case DownloadFilter.archives: return list.where((t) => matchExt(t, ['.iso', '.zip', '.rar', '.tar'])).toList();
@@ -255,6 +257,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       child: Row(
         children: [
           _buildChip(DownloadFilter.all, 'All ($count)', isDark),
+          const SizedBox(width: AppSpacing.x2),
+          _buildChip(DownloadFilter.completed, 'Completed', isDark),
+          const SizedBox(width: AppSpacing.x2),
+          _buildChip(DownloadFilter.pending, 'Pending', isDark),
           const SizedBox(width: AppSpacing.x2),
           _buildChip(DownloadFilter.media, 'Media', isDark),
           const SizedBox(width: AppSpacing.x2),

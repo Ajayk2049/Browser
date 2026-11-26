@@ -9,11 +9,13 @@ import '../services/search_suggestions_service.dart';
 class SearchSuggestionsOverlay extends StatelessWidget {
   final List<SearchSuggestionItem> suggestions;
   final ValueChanged<String> onSelectSuggestion;
+  final Object? tapRegionGroupId;
 
   const SearchSuggestionsOverlay({
     super.key,
     required this.suggestions,
     required this.onSelectSuggestion,
+    this.tapRegionGroupId,
   });
 
   @override
@@ -27,7 +29,7 @@ class SearchSuggestionsOverlay extends StatelessWidget {
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
 
-    return Material(
+    final card = Material(
       color: Colors.transparent,
       child: Container(
         decoration: BoxDecoration(
@@ -56,6 +58,9 @@ class SearchSuggestionsOverlay extends StatelessWidget {
         ),
       ),
     );
+
+    if (tapRegionGroupId == null) return card;
+    return TapRegion(groupId: tapRegionGroupId, child: card);
   }
 
   Widget _buildRow(SearchSuggestionItem item, Color textColor, Color subColor) {

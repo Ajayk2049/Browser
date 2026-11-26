@@ -25,8 +25,6 @@ void main() {
             isBookmarked: false,
             onToggleBookmark: () {},
             onReload: () {},
-            detectedMediaCount: 3,
-            onOpenMediaGrabber: () {},
           ),
         ),
       ),
@@ -71,5 +69,68 @@ void main() {
     // Later sections live below the fold in a lazy list.
     await tester.scrollUntilVisible(find.text('Privacy & security'), 200);
     expect(find.text('Privacy & security'), findsOneWidget);
+  });
+
+  testWidgets('address bar aligns left on focus and selects all on webpage',
+      (tester) async {
+    final homeCtrl = TextEditingController();
+    addTearDown(homeCtrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BrowserAddressBar(
+            controller: homeCtrl,
+            onSubmitted: (_) {},
+            onReload: () {},
+            isHome: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).textAlign, TextAlign.center);
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).textAlign, TextAlign.start);
+
+    final pageCtrl = TextEditingController(text: 'https://example.com/path');
+    addTearDown(pageCtrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BrowserAddressBar(
+            key: const ValueKey('page-bar'),
+            controller: pageCtrl,
+            onSubmitted: (_) {},
+            onReload: () {},
+            isHome: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).textAlign, TextAlign.start);
+    expect(
+      pageCtrl.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 24),
+    );
+
+    // Clear button appears when focused with text and clears input
+    expect(find.byTooltip('Clear'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear'));
+    await tester.pumpAndSettle();
+    expect(pageCtrl.text, '');
+    expect(find.byTooltip('Reload'), findsOneWidget);
+
+    // Tapping outside unfocuses and restores original URL when not submitted
+    await tester.tapAt(const Offset(10, 300));
+    await tester.pumpAndSettle();
+    expect(pageCtrl.text, 'https://example.com/path');
   });
 }

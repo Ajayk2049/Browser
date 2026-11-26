@@ -21,6 +21,10 @@ class GeckoBrowserController {
     await _channel?.invokeMethod('setActive', {'active': active});
   }
 
+  Future<void> onResume() async {
+    await _channel?.invokeMethod('onResume');
+  }
+
   Future<void> loadUrl(String url) async {
     await _channel?.invokeMethod('loadUrl', {'url': url});
   }
@@ -89,15 +93,25 @@ class GeckoBrowserView extends StatefulWidget {
   State<GeckoBrowserView> createState() => _GeckoBrowserViewState();
 }
 
-class _GeckoBrowserViewState extends State<GeckoBrowserView> {
+class _GeckoBrowserViewState extends State<GeckoBrowserView> with WidgetsBindingObserver {
   MethodChannel? _channel;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AppearanceSettingsService.onFontSizeFactorChanged = (factor) {
       widget.controller.setFontSizeFactor(factor);
     };
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.onResume();
+    } else if (state == AppLifecycleState.paused) {
+      widget.controller.setActive(false);
+    }
   }
 
   void _onPlatformViewCreated(int id) {
@@ -158,6 +172,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _channel?.setMethodCallHandler(null);
     widget.controller._detach();
     super.dispose();
@@ -188,13 +203,16 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> {
         );
       },
       onCreatePlatformView: (params) {
-        return PlatformViewsService.initAndroidView(
+        return PlatformViewsService.initExpensiveAndroidView(
           id: params.id,
           viewType: viewType,
           layoutDirection: TextDirection.ltr,
           creationParams: creationParams,
           creationParamsCodec: const StandardMessageCodec(),
-          onFocus: () => params.onFocusChanged(true),
+          onFocus: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            params.onFocusChanged(true);
+          },
         )
           ..addOnPlatformViewCreatedListener((id) {
             params.onPlatformViewCreated(id);

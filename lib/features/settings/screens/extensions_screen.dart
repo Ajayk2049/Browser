@@ -99,7 +99,8 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
                         item: installed[i],
                         onToggle: (val) => WebExtensionService.instance.toggleEnabled(installed[i]),
                         onUninstall: () => _handleUninstall(installed[i]),
-                        onOptions: installed[i].optionsPageUrl.isNotEmpty
+                        onOptions: (!installed[i].name.toLowerCase().contains('ublock') &&
+                                installed[i].optionsPageUrl.isNotEmpty)
                             ? () => Navigator.of(context).pop(installed[i].optionsPageUrl)
                             : null,
                       ),

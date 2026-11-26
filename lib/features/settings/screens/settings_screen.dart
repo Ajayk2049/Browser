@@ -106,32 +106,23 @@ class SettingsScreen extends StatelessWidget {
               SettingsGroupCard(
                 items: [
                   SettingsRowItem(
-                    icon: PhosphorIcons.sparkle,
+                    customLeading: _buildDabIconBox(isDark),
                     title: 'Dab Browser',
                     subtitle: 'Version 1.2.0 (Build 418)',
                     trailing: _buildBadge('Latest', isDark),
                     onTap: () => _showNotice(context, 'Dab Browser is up to date'),
                   ),
-                  SettingsRowItem(
-                    icon: PhosphorIcons.article,
-                    title: 'Terms & Privacy Policy',
-                    subtitle: 'Zero tracking, local-first storage',
-                    trailing: _buildChevron(isDark),
-                    onTap: () => _showNotice(
-                      context,
-                      'Local-first architecture with zero external data collection',
-                    ),
+                  const SettingsRowItem(
+                    icon: PhosphorIcons.user,
+                    title: 'Made By Ajay',
+                    subtitle: 'Built with Flutter & Mozilla GeckoView',
                   ),
                   SettingsRowItem(
-                    icon: PhosphorIcons.code,
-                    title: 'Open Source Licenses',
-                    subtitle: 'Mozilla GeckoView core & Flutter libraries',
+                    icon: PhosphorIcons.githubLogo,
+                    title: 'GitHub Repo',
+                    subtitle: 'github.com/Ajayk2049/Browser',
                     trailing: _buildChevron(isDark),
-                    onTap: () => showLicensePage(
-                      context: context,
-                      applicationName: 'Dab Browser',
-                      applicationVersion: '1.2.0',
-                    ),
+                    onTap: () => context.pop('https://github.com/Ajayk2049/Browser'),
                   ),
                 ],
               ),
@@ -139,6 +130,27 @@ class SettingsScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildDabIconBox(bool isDark) {
+    final bg = isDark ? const Color(0xFF1E2433) : const Color(0xFFF1F5F9);
+    final border = isDark ? const Color(0xFF2A3245) : const Color(0xFFE2E8F0);
+    return Container(
+      width: 38.0,
+      height: 38.0,
+      padding: const EdgeInsets.all(5.0),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10.0),
+        border: Border.all(color: border, width: 1.0),
+      ),
+      child: isDark
+          ? ColorFiltered(
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+              child: Image.asset('assets/images/splash_icon.png', fit: BoxFit.contain),
+            )
+          : Image.asset('assets/images/splash_icon.png', fit: BoxFit.contain),
     );
   }
 

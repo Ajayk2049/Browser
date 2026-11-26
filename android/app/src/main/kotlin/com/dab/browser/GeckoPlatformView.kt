@@ -1,7 +1,9 @@
 package com.dab.browser
 
 import android.content.Context
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -47,8 +49,15 @@ class GeckoPlatformView(
         android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
         session.setActive(true)
 
-        geckoView.isFocusable = true; geckoView.isFocusableInTouchMode = true
-        geckoView.setOnTouchListener { v, _ -> if (!v.hasFocus()) v.requestFocus(); false }
+        geckoView.isFocusable = true
+        geckoView.isFocusableInTouchMode = true
+        geckoView.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        geckoView.setOnTouchListener { v, event ->
+            if (event.action == MotionEvent.ACTION_DOWN && !v.hasFocus()) {
+                v.requestFocus()
+            }
+            false
+        }
 
         setupDelegates()
 
@@ -194,6 +203,15 @@ class GeckoPlatformView(
                 val active = call.argument<Boolean>("active") ?: true
                 android.util.Log.d("NavPerf", "setActive($active) on session ${System.identityHashCode(session)}")
                 session.setActive(active)
+                result.success(true)
+            }
+            "onResume" -> {
+                session.setActive(true)
+                if (geckoView.session == null) {
+                    geckoView.setSession(session)
+                }
+                geckoView.invalidate()
+                geckoView.requestLayout()
                 result.success(true)
             }
             "loadUrl" -> {

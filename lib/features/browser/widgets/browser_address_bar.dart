@@ -46,9 +46,14 @@ class BrowserAddressBar extends StatefulWidget {
 class _BrowserAddressBarState extends State<BrowserAddressBar> {
   final FocusNode _focusNode = FocusNode();
   final LayerLink _layerLink = LayerLink();
+  final Object _tapRegionGroupId = Object();
   OverlayEntry? _overlayEntry;
   List<SearchSuggestionItem> _suggestions = [];
   Timer? _debounceTimer;
+  bool _wasFocused = false;
+  bool _pendingSelectAll = false;
+  bool _didSubmit = false;
+  String _textBeforeFocus = '';
 
   @override
   void initState() {
@@ -68,19 +73,51 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
   }
 
   void _onFocusChange() {
-    setState(() {});
-    if (!_focusNode.hasFocus) {
+    final hasFocus = _focusNode.hasFocus;
+    final gainedFocus = !_wasFocused && hasFocus;
+    final lostFocus = _wasFocused && !hasFocus;
+    _wasFocused = hasFocus;
+
+    if (gainedFocus) {
+      _didSubmit = false;
+      _textBeforeFocus = widget.controller.text;
+      if (!widget.isHome && widget.controller.text.isNotEmpty) {
+        _pendingSelectAll = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _selectAllIfFocused());
+      }
+    } else if (lostFocus) {
+      _pendingSelectAll = false;
+      _debounceTimer?.cancel();
       _removeOverlay();
-    } else {
-      _triggerSuggestions(widget.controller.text);
+      if (!_didSubmit && widget.controller.text != _textBeforeFocus) {
+        widget.controller.text = _textBeforeFocus;
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _selectAllIfFocused() {
+    if (mounted && _focusNode.hasFocus && widget.controller.text.isNotEmpty) {
+      widget.controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.controller.text.length,
+      );
     }
   }
 
   void _onTextChanged() {
-    if (_focusNode.hasFocus) {
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: 200), () => _triggerSuggestions(widget.controller.text));
+    if (!_focusNode.hasFocus) return;
+    setState(() {});
+    _debounceTimer?.cancel();
+    final text = widget.controller.text;
+    if (text == _textBeforeFocus && !widget.isHome) {
+      _removeOverlay();
+      return;
     }
+    _debounceTimer = Timer(
+      const Duration(milliseconds: 200),
+      () => _triggerSuggestions(widget.controller.text),
+    );
   }
 
   Future<void> _triggerSuggestions(String text) async {
@@ -93,7 +130,19 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
     final items = await SearchSuggestionsService.instance.getSuggestions(text, widget.selectedEngine);
     if (!mounted || !_focusNode.hasFocus) return;
     _suggestions = items;
-    if (_suggestions.isNotEmpty) _showOverlay(); else _removeOverlay();
+    if (_suggestions.isNotEmpty) {
+      _showOverlay();
+    } else {
+      _removeOverlay();
+    }
+  }
+
+  void _submitInput(String raw) {
+    _didSubmit = true;
+    _debounceTimer?.cancel();
+    _removeOverlay();
+    _focusNode.unfocus();
+    widget.onSubmitted(raw);
   }
 
   void _showOverlay() {
@@ -108,11 +157,8 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
           offset: const Offset(0, 50),
           child: SearchSuggestionsOverlay(
             suggestions: _suggestions,
-            onSelectSuggestion: (target) {
-              _removeOverlay();
-              _focusNode.unfocus();
-              widget.onSubmitted(target);
-            },
+            tapRegionGroupId: _tapRegionGroupId,
+            onSelectSuggestion: _submitInput,
           ),
         ),
       ),
@@ -132,100 +178,137 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
     final isPriv = widget.isPrivate;
     final fgText = isPriv ? Colors.white : colorScheme.onSurface;
     final fgVariant = isPriv ? const Color(0xFFCBD5E1) : colorScheme.onSurfaceVariant;
-    final borderCol = isPriv ? Colors.white.withValues(alpha: 0.85) : colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final idleBorder = isPriv ? Colors.white.withValues(alpha: 0.85) : colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final borderCol = hasFocus ? (isPriv ? Colors.white : colorScheme.primary.withValues(alpha: 0.8)) : idleBorder;
     final boxBg = isPriv ? const Color(0xFF1E2433) : colorScheme.surfaceContainerHighest;
+    final showClear = hasFocus && widget.controller.text.isNotEmpty;
 
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3, vertical: AppSpacing.x2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: boxBg,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(color: borderCol, width: isPriv ? 1.4 : 1.0),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: isPriv
-                          ? const Icon(PhosphorIcons.eyeglasses, size: 20, color: Colors.white)
-                          : IconButton(
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              tooltip: widget.onToggleBookmark == null ? null : (widget.isBookmarked ? 'Remove bookmark' : 'Bookmark this page'),
-                              icon: Icon(widget.isBookmarked ? PhosphorIcons.starFill : PhosphorIcons.star, size: 20, color: widget.isBookmarked ? const Color(0xFFEAB308) : (widget.onToggleBookmark == null ? colorScheme.onSurfaceVariant.withValues(alpha: 0.35) : colorScheme.onSurfaceVariant)),
-                              onPressed: widget.onToggleBookmark,
-                            ),
-                    ),
-                    const SizedBox(width: 4),
-                    Tooltip(
-                      message: 'View site information',
-                      child: InkWell(
-                        onTap: widget.onOpenPageInfo,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                          child: Icon(PhosphorIcons.lockSimple, size: 16, color: fgVariant),
-                        ),
+    return TapRegion(
+      groupId: _tapRegionGroupId,
+      onTapOutside: (_) {
+        if (hasFocus) _focusNode.unfocus();
+      },
+      child: CompositedTransformTarget(
+        link: _layerLink,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3, vertical: AppSpacing.x2),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: boxBg,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: borderCol, width: hasFocus || isPriv ? 1.4 : 1.0),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: isPriv
+                            ? const Icon(PhosphorIcons.eyeglasses, size: 20, color: Colors.white)
+                            : IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                tooltip: widget.onToggleBookmark == null ? null : (widget.isBookmarked ? 'Remove bookmark' : 'Bookmark this page'),
+                                icon: Icon(
+                                  widget.isBookmarked ? PhosphorIcons.starFill : PhosphorIcons.star,
+                                  size: 20,
+                                  color: widget.isBookmarked
+                                      ? const Color(0xFFEAB308)
+                                      : (widget.onToggleBookmark == null ? colorScheme.onSurfaceVariant.withValues(alpha: 0.35) : colorScheme.onSurfaceVariant),
+                                ),
+                                onPressed: widget.onToggleBookmark,
+                              ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: TextField(
-                        controller: widget.controller,
-                        focusNode: _focusNode,
-                        keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.search,
-                        textAlign: TextAlign.center,
-                        textAlignVertical: TextAlignVertical.center,
-                        onSubmitted: (val) {
-                          _removeOverlay();
-                          widget.onSubmitted(val);
-                        },
-                        style: AppTypography.bodyMd.copyWith(color: fgText, fontWeight: FontWeight.w600, height: 1.2),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          filled: false,
-                          fillColor: Colors.transparent,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          hintText: hasFocus ? null : (widget.isHome ? (isPriv ? 'Private Browsing' : 'Welcome to Dab Browser') : 'Search or enter address'),
-                          hintStyle: AppTypography.bodyMd.copyWith(
-                            color: isPriv ? Colors.white.withValues(alpha: 0.7) : (widget.isHome ? colorScheme.onSurface : colorScheme.onSurfaceVariant),
-                            fontWeight: widget.isHome ? FontWeight.w600 : FontWeight.w400,
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: 'View site information',
+                        child: InkWell(
+                          onTap: widget.onOpenPageInfo,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            child: Icon(PhosphorIcons.lockSimple, size: 16, color: fgVariant),
                           ),
-                          contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Reload',
-                        icon: Icon(PhosphorIcons.arrowClockwise, size: 20, color: fgVariant),
-                        onPressed: widget.onReload,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: TextField(
+                          controller: widget.controller,
+                          focusNode: _focusNode,
+                          keyboardType: TextInputType.url,
+                          textInputAction: TextInputAction.search,
+                          autocorrect: false,
+                          maxLines: 1,
+                          scrollPhysics: const ClampingScrollPhysics(),
+                          textAlign: hasFocus ? TextAlign.start : TextAlign.center,
+                          textAlignVertical: TextAlignVertical.center,
+                          onTap: () {
+                            if (_pendingSelectAll && !widget.isHome && widget.controller.text.isNotEmpty) {
+                              _pendingSelectAll = false;
+                              WidgetsBinding.instance.addPostFrameCallback((_) => _selectAllIfFocused());
+                            }
+                          },
+                          onSubmitted: _submitInput,
+                          style: AppTypography.bodyMd.copyWith(color: fgText, fontWeight: FontWeight.w600, height: 1.2),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: false,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            hintText: hasFocus
+                                ? 'Search or enter address'
+                                : (widget.isHome ? (isPriv ? 'Private Browsing' : 'Welcome to Dab Browser') : 'Search or enter address'),
+                            hintStyle: AppTypography.bodyMd.copyWith(
+                              color: isPriv
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : (!hasFocus && widget.isHome ? colorScheme.onSurface : colorScheme.onSurfaceVariant),
+                              fontWeight: !hasFocus && widget.isHome ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: showClear
+                            ? IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                tooltip: 'Clear',
+                                icon: Icon(PhosphorIcons.xCircle, size: 20, color: fgVariant),
+                                onPressed: () {
+                                  widget.controller.clear();
+                                  _suggestions = [];
+                                  _removeOverlay();
+                                },
+                              )
+                            : IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                tooltip: 'Reload',
+                                icon: Icon(PhosphorIcons.arrowClockwise, size: 20, color: fgVariant),
+                                onPressed: widget.onReload,
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
