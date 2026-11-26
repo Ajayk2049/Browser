@@ -13,7 +13,7 @@ class SearchEngineSettingsModel {
   final String customEngineUrl;
 
   const SearchEngineSettingsModel({
-    this.defaultEngine = SearchEngine.duckDuckGo,
+    this.defaultEngine = SearchEngine.google,
     this.searchSuggestions = true,
     this.safeSearchMode = 'Moderate',
     this.customEngineName = '',
@@ -45,7 +45,7 @@ class SearchEngineSettingsModel {
       };
 
   factory SearchEngineSettingsModel.fromJson(Map<String, dynamic> json) {
-    SearchEngine type = SearchEngine.duckDuckGo;
+    SearchEngine type = SearchEngine.google;
     final rawName = json['defaultEngine'] as String?;
     if (rawName != null) {
       for (final t in SearchEngine.values) {

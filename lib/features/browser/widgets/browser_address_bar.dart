@@ -33,7 +33,7 @@ class BrowserAddressBar extends StatefulWidget {
     this.onOpenPageInfo,
     required this.onReload,
     this.isLoading = false,
-    this.selectedEngine = SearchEngine.duckDuckGo,
+    this.selectedEngine = SearchEngine.google,
     this.onEngineChanged,
     this.isHome = false,
     this.isPrivate = false,

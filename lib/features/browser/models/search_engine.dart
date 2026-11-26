@@ -1,8 +1,8 @@
 /// Supported search engines for omnibox querying.
 /// Complies with rules.md §13, §29.1, and §29.2 (< 200 lines).
 enum SearchEngine {
-  duckDuckGo,
   google,
+  duckDuckGo,
   bing,
   brave,
   startpage,

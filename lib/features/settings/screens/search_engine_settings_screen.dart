@@ -11,8 +11,8 @@ class SearchEngineSettingsScreen extends StatelessWidget {
   const SearchEngineSettingsScreen({super.key});
 
   static const _engineMeta = [
-    (SearchEngine.duckDuckGo, 'D', 'duckduckgo.com'),
     (SearchEngine.google, 'G', 'google.com'),
+    (SearchEngine.duckDuckGo, 'D', 'duckduckgo.com'),
     (SearchEngine.bing, 'B', 'bing.com'),
     (SearchEngine.brave, '▲', 'search.brave.com'),
     (SearchEngine.startpage, 'S', 'startpage.com'),
@@ -271,7 +271,7 @@ class SearchEngineSettingsScreen extends StatelessWidget {
                         (cur) => cur.copyWith(
                           customEngineName: '',
                           customEngineUrl: '',
-                          defaultEngine: cur.defaultEngine == SearchEngine.custom ? SearchEngine.duckDuckGo : cur.defaultEngine,
+                          defaultEngine: cur.defaultEngine == SearchEngine.custom ? SearchEngine.google : cur.defaultEngine,
                         ),
                       );
                       Navigator.of(ctx).pop();

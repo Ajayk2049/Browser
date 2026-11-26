@@ -60,6 +60,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _initAndRestoreSession();
     BookmarksService.instance.addListener(_syncData);
     QuickLinksService.instance.addListener(_syncData);
+    SearchEngineSettingsService.instance.addListener(_syncData);
     _channel.setMethodCallHandler((call) async { if (call.method == 'closeAllPrivateTabs') _closeAllPrivateTabs(); });
     MediaSnifferService.instance.genericStream.listen(_onGenericSniffedMedia);
     MediaSnifferService.instance.removedUrlStream.listen(_onRemovedSniffedUrl);
@@ -89,6 +90,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   void dispose() {
     BookmarksService.instance.removeListener(_syncData); QuickLinksService.instance.removeListener(_syncData);
+    SearchEngineSettingsService.instance.removeListener(_syncData);
     _urlController.dispose(); super.dispose();
   }
 

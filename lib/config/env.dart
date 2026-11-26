@@ -7,18 +7,6 @@ class Env {
     defaultValue: 'Gecko Browser',
   );
 
-  /// Default home page / fallback URL for the browser
-  static const String defaultHomeUrl = String.fromEnvironment(
-    'DEFAULT_HOME_URL',
-    defaultValue: 'https://duckduckgo.com',
-  );
-
-  /// Default search engine URL format string
-  static const String searchEngineUrl = String.fromEnvironment(
-    'SEARCH_ENGINE_URL',
-    defaultValue: 'https://duckduckgo.com/?q=',
-  );
-
   /// Maximum concurrent download connections (1DM+ style)
   static const int maxDownloadThreads = int.fromEnvironment(
     'MAX_DOWNLOAD_THREADS',
