@@ -29,6 +29,10 @@ class GeckoBrowserController {
     await _channel?.invokeMethod('loadUrl', {'url': url});
   }
 
+  Future<void> proceedInsecure(String url) async {
+    await _channel?.invokeMethod('proceedInsecure', {'url': url});
+  }
+
   Future<void> goBack() async {
     await _channel?.invokeMethod('goBack');
   }
@@ -69,7 +73,7 @@ class GeckoBrowserView extends StatefulWidget {
   final ValueChanged<String>? onDownloadPrompt;
   final void Function(String url, String title, String type)? onMediaDetected;
   final void Function(int current, int total)? onFinderResult;
-  final void Function(String uri, int code, String category)? onWebResourceError;
+  final void Function(String uri, int code, String errorKey, String categoryName)? onWebResourceError;
 
   const GeckoBrowserView({
     super.key,
@@ -164,7 +168,8 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> with WidgetsBinding
         widget.onWebResourceError?.call(
           args['uri'] as String? ?? '',
           (args['code'] as num?)?.toInt() ?? 0,
-          args['category'] as String? ?? '',
+          args['errorKey'] as String? ?? 'UNKNOWN',
+          args['categoryName'] as String? ?? 'NETWORK',
         );
         break;
     }

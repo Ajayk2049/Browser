@@ -1,4 +1,5 @@
 import '../widgets/gecko_browser_view.dart';
+import 'browser_page_error.dart';
 
 /// Immutable snapshot of one open tab, as rendered by the tabs sheet.
 /// Complies with rules.md §13, §29.1, and §29.2 (< 200 lines).
@@ -54,6 +55,7 @@ class BrowserTabSession {
   bool isLoading = false;
   double progress = 0.0;
   String? error;
+  BrowserPageError? pageError;
   bool canGoBack = false;
   bool canGoForward = false;
   bool isBookmarked = false;

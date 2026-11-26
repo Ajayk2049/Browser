@@ -14,7 +14,7 @@ import '../services/youtube_grabber_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/browser_address_bar.dart';
 import '../widgets/browser_bottom_bar.dart';
-import '../widgets/browser_error_banner.dart';
+import '../widgets/browser_error_view.dart';
 import '../widgets/browser_home_view.dart';
 import '../widgets/browser_overflow_menu.dart';
 import '../widgets/browser_shortcut_helper.dart';
@@ -111,7 +111,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (Uri.tryParse(resolvedUrl) == null) return;
     _activeTab.controller.loadUrl(resolvedUrl);
     _lastCheckedVideoId = null;
-    setState(() { _activeTab..isLoaded = true..error = null..url = resolvedUrl; _urlController.text = resolvedUrl; _detectedMedia.clear(); });
+    setState(() { _activeTab..isLoaded = true..error = null..pageError = null..url = resolvedUrl; _urlController.text = resolvedUrl; _detectedMedia.clear(); });
     _checkYouTube(resolvedUrl);
     if (!_isPrivateMode) _persistTabs();
   }
@@ -119,7 +119,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _loadHome() {
     _lastCheckedVideoId = null;
     setState(() {
-      _activeTab..url = _homeUrl..title = 'Home'..error = null..isLoading = false..canGoForward = false;
+      _activeTab..url = _homeUrl..title = 'Home'..error = null..pageError = null..isLoading = false..canGoForward = false;
       _urlController.text = ''; _detectedMedia.clear();
       if (!_isPrivateMode) _persistTabs();
     });
@@ -387,14 +387,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   BrowserAddressBar(
                     controller: _urlController, onSubmitted: _handleSubmit, isBookmarked: !_activeTab.isHome && isCurrentBookmarked,
                     onToggleBookmark: _activeTab.isHome ? null : _toggleBookmark, onOpenPageInfo: _openPageSecurity,
-                    onReload: () { if (!_activeTab.isHome) _activeTab.controller.reload(); }, isLoading: _activeTab.isLoading,
+                    onReload: () { if (!_activeTab.isHome) { setState(() => _activeTab.pageError = null); _activeTab.controller.reload(); } }, isLoading: _activeTab.isLoading,
                     selectedEngine: _selectedEngine, onEngineChanged: (e) => SearchEngineSettingsService.instance.updateSettings((c) => c.copyWith(defaultEngine: e)),
                     isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
                   ),
                   if (_activeTab.isLoading)
                     LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
-                  if (_activeTab.error != null)
-                    BrowserErrorBanner(message: _activeTab.error ?? '', onRetry: () { setState(() => _activeTab.error = null); _activeTab.controller.reload(); }),
                   Expanded(child: IndexedStack(index: activeIndex, children: [for (final tab in _activeTabs) _buildTabView(tab)])),
                   if (_isFindInPageVisible) FindInPageBar(
                     currentMatch: _findCurrent, totalMatches: _findTotal,
@@ -431,10 +429,37 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
     if (!tab.isLoaded) return const SizedBox.shrink();
     final isActive = tab.id == _activeTabId;
-    return RepaintBoundary(child: BrowserTabViewport(
-      key: ValueKey(tab.id), tab: tab, isActive: isActive, onUrlChanged: _onUrlUpdated,
-      onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
-      onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }), onSync: () => setState(() {}),
-    ));
+    return Stack(
+      children: [
+        RepaintBoundary(child: BrowserTabViewport(
+          key: ValueKey(tab.id), tab: tab, isActive: isActive, onUrlChanged: _onUrlUpdated,
+          onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
+          onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }), onSync: () => setState(() {}),
+        )),
+        if (tab.pageError != null)
+          BrowserErrorView(
+            error: tab.pageError!,
+            onReload: () {
+              setState(() => tab.pageError = null);
+              if (tab.url.isNotEmpty) tab.controller.loadUrl(tab.url);
+              else tab.controller.reload();
+            },
+            onGoHome: _loadHome,
+            onProceedAnyway: tab.pageError!.isSecurityError
+                ? () {
+                    final target = tab.pageError!.insecureFallbackUrl;
+                    setState(() {
+                      tab.pageError = null;
+                      if (target.isNotEmpty) {
+                        tab.url = target;
+                        if (isActive) _urlController.text = target;
+                      }
+                    });
+                    tab.controller.proceedInsecure(target);
+                  }
+                : null,
+          ),
+      ],
+    );
   }
 }

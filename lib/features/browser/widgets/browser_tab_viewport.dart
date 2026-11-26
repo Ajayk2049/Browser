@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/browser_page_error.dart';
 import '../models/browser_tab.dart';
 import '../services/history_service.dart';
 import '../utils/url_helper.dart';
@@ -37,7 +38,7 @@ class BrowserTabViewport extends StatelessWidget {
         controller: tab.controller,
         isPrivate: tab.isPrivate,
         onPageStarted: (url) {
-          tab..url = url..isLoading = true..error = null;
+          tab..url = url..isLoading = true..error = null..pageError = null;
           if (isActive) onUrlChanged(url);
         },
         onPageFinished: (ok) {
@@ -84,8 +85,16 @@ class BrowserTabViewport extends StatelessWidget {
           tab.canGoForward = can;
           if (isActive) onSync();
         },
-        onWebResourceError: (uri, code, cat) {
-          tab..error = 'Could not reach this page ($cat error $code)'..isLoading = false;
+        onWebResourceError: (uri, code, errorKey, categoryName) {
+          tab
+            ..pageError = BrowserPageError(
+              uri: uri.isNotEmpty ? uri : tab.url,
+              errorKey: errorKey,
+              categoryName: categoryName,
+              code: code,
+            )
+            ..error = null
+            ..isLoading = false;
           if (isActive) onSync();
         },
       ),

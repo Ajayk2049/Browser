@@ -28,6 +28,7 @@ class GeckoPlatformView(
         )
     }
 
+    private val geckoContext: Context = context
     private val geckoView = GeckoView(context)
     private val session = GeckoSession(
         GeckoSessionSettings.Builder()
@@ -126,6 +127,9 @@ class GeckoPlatformView(
             ): GeckoResult<AllowOrDeny>? {
                 val uri = request.uri
                 val lower = uri.lowercase()
+                if (lower.startsWith("blob:") || lower.startsWith("data:")) {
+                    return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                }
                 if (lower.startsWith("magnet:") || isDownloadable(lower)) {
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
@@ -150,13 +154,45 @@ class GeckoPlatformView(
             }
 
             override fun onLoadError(s: GeckoSession, uri: String?, error: WebRequestError): GeckoResult<String>? {
+                val errorKey = when (error.code) {
+                    WebRequestError.ERROR_OFFLINE -> "OFFLINE"
+                    WebRequestError.ERROR_UNKNOWN_HOST -> "UNKNOWN_HOST"
+                    WebRequestError.ERROR_NET_TIMEOUT -> "NET_TIMEOUT"
+                    WebRequestError.ERROR_CONNECTION_REFUSED -> "CONNECTION_REFUSED"
+                    WebRequestError.ERROR_NET_RESET -> "NET_RESET"
+                    WebRequestError.ERROR_NET_INTERRUPT -> "NET_INTERRUPT"
+                    WebRequestError.ERROR_MALFORMED_URI -> "MALFORMED_URI"
+                    WebRequestError.ERROR_UNKNOWN_PROTOCOL -> "UNSUPPORTED_PROTOCOL"
+                    WebRequestError.ERROR_HTTPS_ONLY -> "HTTPS_ONLY"
+                    WebRequestError.ERROR_BAD_HSTS_CERT -> "BAD_HSTS_CERT"
+                    WebRequestError.ERROR_SECURITY_SSL -> "SECURITY_SSL"
+                    WebRequestError.ERROR_SECURITY_BAD_CERT -> "SECURITY_BAD_CERT"
+                    WebRequestError.ERROR_REDIRECT_LOOP -> "REDIRECT_LOOP"
+                    WebRequestError.ERROR_UNKNOWN_PROXY_HOST -> "UNKNOWN_PROXY_HOST"
+                    WebRequestError.ERROR_PROXY_CONNECTION_REFUSED -> "PROXY_CONNECTION_REFUSED"
+                    WebRequestError.ERROR_CONTENT_CRASHED -> "CONTENT_CRASHED"
+                    WebRequestError.ERROR_SAFEBROWSING_MALWARE_URI,
+                    WebRequestError.ERROR_SAFEBROWSING_PHISHING_URI,
+                    WebRequestError.ERROR_SAFEBROWSING_UNWANTED_URI,
+                    WebRequestError.ERROR_SAFEBROWSING_HARMFUL_URI -> "SAFEBROWSING"
+                    else -> "UNKNOWN"
+                }
+                val categoryName = when (error.category) {
+                    WebRequestError.ERROR_CATEGORY_SECURITY -> "SECURITY"
+                    WebRequestError.ERROR_CATEGORY_NETWORK -> "NETWORK"
+                    WebRequestError.ERROR_CATEGORY_CONTENT -> "CONTENT"
+                    WebRequestError.ERROR_CATEGORY_URI -> "URI"
+                    WebRequestError.ERROR_CATEGORY_PROXY -> "PROXY"
+                    WebRequestError.ERROR_CATEGORY_SAFEBROWSING -> "SAFEBROWSING"
+                    else -> "UNKNOWN"
+                }
                 invokeFlutter(
                     "onWebResourceError",
                     mapOf(
                         "uri" to (uri ?: ""),
                         "code" to error.code,
-                        "category" to error.category,
-                        "message" to "Error ${error.code} in category ${error.category}"
+                        "errorKey" to errorKey,
+                        "categoryName" to categoryName
                     )
                 )
                 return null
@@ -185,6 +221,10 @@ class GeckoPlatformView(
 
             override fun onExternalResponse(s: GeckoSession, response: WebResponse) {
                 val url = response.uri
+                if (response.body != null && WebResponseDownloader.shouldStreamDirectly(url)) {
+                    WebResponseDownloader.streamToDownloads(geckoContext, response)
+                    return
+                }
                 try { response.body?.close() } catch (_: Exception) {}
                 if (isMediaStream(url.lowercase())) {
                     invokeFlutter("onMediaDetected", mapOf("url" to url, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(url.lowercase())))
@@ -219,6 +259,17 @@ class GeckoPlatformView(
                 android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
                 session.setActive(true)
                 session.loadUri(url)
+                result.success(true)
+            }
+            "proceedInsecure" -> {
+                val url = call.argument<String>("url") ?: ""
+                runtime?.settings?.allowInsecureConnections = GeckoRuntimeSettings.ALLOW_ALL
+                session.setActive(true)
+                if (url.isNotEmpty()) {
+                    session.loadUri(url)
+                } else {
+                    session.reload()
+                }
                 result.success(true)
             }
             "goBack" -> { session.goBack(); result.success(true) }
