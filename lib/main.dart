@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
@@ -19,7 +19,7 @@ void main() async {
   // installs the bundled sniffer extension, otherwise early `onSniffedMedia`
   // messages are delivered to nobody and dropped.
   WebExtensionService.instance;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 24 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 10 * 1024 * 1024;
   await OnboardingService.instance.init();
   runApp(
     const ProviderScope(

@@ -180,33 +180,56 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.x4, AppSpacing.x3, AppSpacing.x4, 96),
-            children: [
-              const DownloadStorageCard(),
-              const SizedBox(height: AppSpacing.x4),
-              _buildFilterChips(isDark),
-              const SizedBox(height: AppSpacing.x4),
-              if (_isLoading)
-                const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
-              else if (filteredTasks.isEmpty)
-                _buildEmptyState(isDark)
-              else ...[
-                for (final task in filteredTasks) ...[
-                  DownloadTaskCard(
-                    task: task,
-                    onTap: () async {
-                      final deleted = await Navigator.of(context).push<bool>(MaterialPageRoute(
-                        builder: (_) => task.isTorrent ? TorrentDetailsScreen(initialTask: task) : DirectDownloadDetailsScreen(initialTask: task),
-                      ));
-                      if (deleted == true && mounted) setState(() => _tasks.remove(task.id));
-                    },
-                    onDelete: () => _showDeleteConfirmDialog(task),
-                    onLongPress: () => _showDeleteConfirmDialog(task),
+          CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.x4, AppSpacing.x3, AppSpacing.x4, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const DownloadStorageCard(),
+                      const SizedBox(height: AppSpacing.x4),
+                      _buildFilterChips(isDark),
+                      const SizedBox(height: AppSpacing.x4),
+                    ],
                   ),
-                  const SizedBox(height: AppSpacing.x3),
-                ],
-              ],
+                ),
+              ),
+              if (_isLoading)
+                const SliverToBoxAdapter(
+                  child: Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())),
+                )
+              else if (filteredTasks.isEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.x4, 0, AppSpacing.x4, 96),
+                  sliver: SliverToBoxAdapter(child: _buildEmptyState(isDark)),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.x4, 0, AppSpacing.x4, 96),
+                  sliver: SliverList.builder(
+                    addAutomaticKeepAlives: false,
+                    itemCount: filteredTasks.length,
+                    itemBuilder: (context, index) {
+                      final task = filteredTasks[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.x3),
+                        child: DownloadTaskCard(
+                          task: task,
+                          onTap: () async {
+                            final deleted = await Navigator.of(context).push<bool>(MaterialPageRoute(
+                              builder: (_) => task.isTorrent ? TorrentDetailsScreen(initialTask: task) : DirectDownloadDetailsScreen(initialTask: task),
+                            ));
+                            if (deleted == true && mounted) setState(() => _tasks.remove(task.id));
+                          },
+                          onDelete: () => _showDeleteConfirmDialog(task),
+                          onLongPress: () => _showDeleteConfirmDialog(task),
+                        ),
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
           Positioned(

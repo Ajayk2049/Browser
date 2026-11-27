@@ -21,7 +21,7 @@ class OnboardingService extends ChangeNotifier {
   Future<void> init() async {
     if (_isInitialized) return;
     try {
-      final jsonStr = await StoragePersistenceHelper.readData(_fileName);
+      final jsonStr = await StoragePersistenceHelper.readInternalOnly(_fileName);
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final data = jsonDecode(jsonStr);
         if (data is Map<String, dynamic>) {

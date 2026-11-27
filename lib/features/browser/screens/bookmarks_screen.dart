@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../theme/tokens/app_radius.dart';
@@ -21,12 +22,15 @@ class BookmarksScreen extends StatefulWidget {
 
 class _BookmarksScreenState extends State<BookmarksScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
+  String _debouncedQuery = '';
   final Set<String> _selectedIds = {};
   bool _isSelectionMode = false;
   String _selectedFolderId = 'all';
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -61,7 +65,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final query = _searchCtrl.text.trim().toLowerCase();
+        final query = _debouncedQuery;
         final selectedFolder = service.folders.firstWhere((f) => f.id == _selectedFolderId, orElse: () => BookmarksService.allFolder);
         final filteredItems = service.bookmarks.where((b) {
           final matchesFolder = _selectedFolderId == 'all' || b.folderId == _selectedFolderId;
@@ -95,62 +99,77 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                   showSearch: false,
                   onBack: () => Navigator.of(context).maybePop(),
                 ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 80.0),
-            children: [
-              _buildSearchPill(isDark),
-              const SizedBox(height: 16.0),
-              if (query.isEmpty) ...[
-                _buildSectionHeader('FOLDERS', headerColor, action: 'New folder', onAction: () => BookmarkFolderDialogs.showCreate(context, service.addFolder), isDark: isDark),
-                const SizedBox(height: 8.0),
-                _buildCardContainer(
-                  isDark,
-                  children: [
-                    for (int i = 0; i < service.folders.length; i++) ...[
-                      if (i > 0) _buildDivider(isDark),
-                      BookmarkFolderRow(
-                        folder: service.folders[i],
-                        count: service.getBookmarkCountForFolder(service.folders[i].id),
-                        isSelected: _selectedFolderId == service.folders[i].id,
+          body: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 0.0),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildSearchPill(isDark),
+                      const SizedBox(height: 16.0),
+                      if (query.isEmpty) ...[
+                        _buildSectionHeader('FOLDERS', headerColor, action: 'New folder', onAction: () => BookmarkFolderDialogs.showCreate(context, service.addFolder), isDark: isDark),
+                        const SizedBox(height: 8.0),
+                        _buildCardContainer(
+                          isDark,
+                          children: [
+                            for (int i = 0; i < service.folders.length; i++) ...[
+                              if (i > 0) _buildDivider(isDark),
+                              BookmarkFolderRow(
+                                folder: service.folders[i],
+                                count: service.getBookmarkCountForFolder(service.folders[i].id),
+                                isSelected: _selectedFolderId == service.folders[i].id,
+                                isDark: isDark,
+                                onTap: () => setState(() => _selectedFolderId = service.folders[i].id),
+                                onEdit: () => BookmarkFolderDialogs.showEdit(context, service.folders[i], (t) => service.updateFolder(service.folders[i].id, t)),
+                                onDelete: () => BookmarkFolderDialogs.confirmDelete(context, service.folders[i], () {
+                                  if (_selectedFolderId == service.folders[i].id) _selectedFolderId = 'all';
+                                  service.deleteFolder(service.folders[i].id);
+                                }),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 20.0),
+                      ],
+                      _buildSectionHeader(
+                        _selectedFolderId == 'all' ? 'ALL SAVED (${filteredItems.length})' : '${selectedFolder.title.toUpperCase()} (${filteredItems.length})',
+                        headerColor,
+                        action: filteredItems.isNotEmpty && !_isSelectionMode ? 'Edit' : null,
+                        onAction: () => setState(() => _isSelectionMode = true),
                         isDark: isDark,
-                        onTap: () => setState(() => _selectedFolderId = service.folders[i].id),
-                        onEdit: () => BookmarkFolderDialogs.showEdit(context, service.folders[i], (t) => service.updateFolder(service.folders[i].id, t)),
-                        onDelete: () => BookmarkFolderDialogs.confirmDelete(context, service.folders[i], () {
-                          if (_selectedFolderId == service.folders[i].id) _selectedFolderId = 'all';
-                          service.deleteFolder(service.folders[i].id);
-                        }),
                       ),
+                      const SizedBox(height: 8.0),
                     ],
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 20.0),
-              ],
-              _buildSectionHeader(
-                _selectedFolderId == 'all' ? 'ALL SAVED (${filteredItems.length})' : '${selectedFolder.title.toUpperCase()} (${filteredItems.length})',
-                headerColor,
-                action: filteredItems.isNotEmpty && !_isSelectionMode ? 'Edit' : null,
-                onAction: () => setState(() => _isSelectionMode = true),
-                isDark: isDark,
               ),
-              const SizedBox(height: 8.0),
               if (filteredItems.isEmpty)
-                Container(padding: const EdgeInsets.all(24.0), alignment: Alignment.center, child: const Text('No bookmarks in this folder', style: TextStyle(color: headerColor, fontSize: 13.0)))
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 80.0),
+                  sliver: SliverToBoxAdapter(
+                    child: Container(
+                      padding: const EdgeInsets.all(24.0),
+                      alignment: Alignment.center,
+                      child: const Text('No bookmarks in this folder', style: TextStyle(color: headerColor, fontSize: 13.0)),
+                    ),
+                  ),
+                )
               else
-                _buildCardContainer(
-                  isDark,
-                  children: [
-                    for (int i = 0; i < filteredItems.length; i++) ...[
-                      if (i > 0) _buildDivider(isDark),
-                      BookmarkItemRow(
-                        item: filteredItems[i],
-                        isSelected: _selectedIds.contains(filteredItems[i].id),
-                        isSelectionMode: _isSelectionMode,
-                        isDark: isDark,
-                        onTap: () => _isSelectionMode ? _toggleSelection(filteredItems[i].id) : Navigator.of(context).pop(filteredItems[i].url),
-                        onLongPress: () => _toggleSelection(filteredItems[i].id),
-                      ),
-                    ],
-                  ],
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 80.0),
+                  sliver: SliverList.builder(
+                    addAutomaticKeepAlives: false,
+                    itemCount: filteredItems.length,
+                    itemBuilder: (context, i) => _buildBookmarkCardRow(
+                      item: filteredItems[i],
+                      isFirst: i == 0,
+                      isLast: i == filteredItems.length - 1,
+                      isDark: isDark,
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -167,7 +186,14 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     );
     return TextField(
       controller: _searchCtrl,
-      onChanged: (_) => setState(() {}),
+      onChanged: (v) {
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 120), () {
+          if (mounted && _debouncedQuery != v.trim().toLowerCase()) {
+            setState(() => _debouncedQuery = v.trim().toLowerCase());
+          }
+        });
+      },
       style: TextStyle(fontSize: 14.0, color: isDark ? Colors.white : const Color(0xFF0F172A)),
       decoration: InputDecoration(
         isDense: true,
@@ -177,7 +203,13 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
         hintStyle: const TextStyle(fontSize: 14.0, color: Color(0xFF94A3B8)),
         prefixIcon: const Icon(PhosphorIcons.magnifyingGlass, size: 18.0, color: Color(0xFF64748B)),
         suffixIcon: _searchCtrl.text.isNotEmpty
-            ? GestureDetector(onTap: () => setState(() => _searchCtrl.clear()), child: const Icon(PhosphorIcons.xCircle, size: 18.0, color: Color(0xFF94A3B8)))
+            ? GestureDetector(
+                onTap: () => setState(() {
+                  _searchCtrl.clear();
+                  _debouncedQuery = '';
+                }),
+                child: const Icon(PhosphorIcons.xCircle, size: 18.0, color: Color(0xFF94A3B8)),
+              )
             : null,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         border: border,
@@ -205,6 +237,45 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       );
 
   Widget _buildDivider(bool isDark) => Container(height: 1.0, margin: const EdgeInsets.only(left: 62.0, right: 12.0), color: isDark ? const Color(0xFF1A202E) : const Color(0xFFF1F5F9));
+
+  Widget _buildBookmarkCardRow({
+    required BookmarkItem item,
+    required bool isFirst,
+    required bool isLast,
+    required bool isDark,
+  }) {
+    final bg = isDark ? const Color(0xFF131722) : const Color(0xFFFFFFFF);
+    final border = isDark ? const Color(0xFF272E3F) : const Color(0xFFE2E8F0);
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.vertical(
+          top: isFirst ? const Radius.circular(18.0) : Radius.zero,
+          bottom: isLast ? const Radius.circular(18.0) : Radius.zero,
+        ),
+        border: Border(
+          left: BorderSide(color: border),
+          right: BorderSide(color: border),
+          top: isFirst ? BorderSide(color: border) : BorderSide.none,
+          bottom: isLast ? BorderSide(color: border) : BorderSide.none,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isFirst) _buildDivider(isDark),
+          BookmarkItemRow(
+            item: item,
+            isSelected: _selectedIds.contains(item.id),
+            isSelectionMode: _isSelectionMode,
+            isDark: isDark,
+            onTap: () => _isSelectionMode ? _toggleSelection(item.id) : Navigator.of(context).pop(item.url),
+            onLongPress: () => _toggleSelection(item.id),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildBottomActionBar(BookmarksService service, bool isDark) => Container(
         height: 64.0,

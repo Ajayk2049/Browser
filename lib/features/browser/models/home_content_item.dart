@@ -101,7 +101,7 @@ class QuickLink {
     if (url.isEmpty) return '';
     final parsed = Uri.tryParse(url.startsWith('http') ? url : 'https://$url');
     final host = parsed?.host.isNotEmpty == true ? parsed!.host : url;
-    return 'https://www.google.com/s2/favicons?domain=$host&sz=128';
+    return 'https://www.google.com/s2/favicons?domain=$host&sz=64';
   }
 
   Map<String, dynamic> toJson() => {

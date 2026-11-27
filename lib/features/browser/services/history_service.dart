@@ -1,11 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import '../models/history_item.dart';
 import '../utils/storage_persistence_helper.dart';
 
 /// Real persistent storage service for browser history.
 /// Saves visited pages, supports full wipe and individual item deletion.
-/// Dual-mirrors to persistent storage so history survives APK re-installs.
 /// Complies with rules.md §13, §29.2 (< 250 lines).
 class HistoryService extends ChangeNotifier {
   static final HistoryService instance = HistoryService._internal();
@@ -13,11 +14,21 @@ class HistoryService extends ChangeNotifier {
   HistoryService._internal();
 
   static const String _fileName = 'history.json';
+  static const int _maxItems = 500;
   final List<HistoryItem> _items = [];
+  final Map<String, int> _indexByNormUrl = {};
+  Timer? _persistTimer;
   bool _isInitialized = false;
 
   List<HistoryItem> get items => List.unmodifiable(_items);
   int get count => _items.length;
+
+  void _rebuildIndex() {
+    _indexByNormUrl.clear();
+    for (var i = 0; i < _items.length; i++) {
+      _indexByNormUrl[normalizeUrl(_items[i].url)] = i;
+    }
+  }
 
   static String normalizeUrl(String raw) {
     try {
@@ -55,7 +66,8 @@ class HistoryService extends ChangeNotifier {
     if (_isInitialized) return;
     _isInitialized = true;
     try {
-      final content = await StoragePersistenceHelper.readData(_fileName);
+      final content = await StoragePersistenceHelper.readInternalOnly(_fileName) ??
+          await StoragePersistenceHelper.readData(_fileName);
       if (content != null && content.trim().isNotEmpty) {
         final decoded = jsonDecode(content) as List<dynamic>;
         _items.clear();
@@ -66,9 +78,11 @@ class HistoryService extends ChangeNotifier {
             final norm = normalizeUrl(parsed.url);
             if (!isHomeUrl(norm) && seenUrls.add(norm)) {
               _items.add(parsed);
+              if (_items.length >= _maxItems) break;
             }
           }
         }
+        _rebuildIndex();
         notifyListeners();
       }
     } catch (e) {
@@ -95,12 +109,10 @@ class HistoryService extends ChangeNotifier {
       displayTitle = host.isNotEmpty ? host : clean;
     }
 
-    // Check if the entry already exists
-    final existingIndex = _items.indexWhere((h) => normalizeUrl(h.url) == norm);
-    if (existingIndex >= 0) {
-      final existing = _items[existingIndex];
-      // Update existing entry with better title or updated time, without creating a second item
-      _items.removeAt(existingIndex);
+    // O(1) lookup via normalized URL index
+    final existingIndex = _indexByNormUrl[norm];
+    if (existingIndex != null && existingIndex >= 0 && existingIndex < _items.length) {
+      final existing = _items.removeAt(existingIndex);
       final updated = HistoryItem(
         id: existing.id,
         title: (displayTitle.isNotEmpty && displayTitle != clean) ? displayTitle : existing.title,
@@ -116,14 +128,19 @@ class HistoryService extends ChangeNotifier {
         timestamp: DateTime.now(),
       );
       _items.insert(0, newItem);
+      if (_items.length > _maxItems) {
+        _items.removeRange(_maxItems, _items.length);
+      }
     }
+    _rebuildIndex();
     notifyListeners();
-    await _persist();
+    _schedulePersist();
   }
 
   /// Removes an individual history item by its unique [id].
   Future<void> removeItem(String id) async {
     _items.removeWhere((item) => item.id == id);
+    _rebuildIndex();
     notifyListeners();
     await _persist();
   }
@@ -136,6 +153,7 @@ class HistoryService extends ChangeNotifier {
       final cutoff = DateTime.now().subtract(timeRangeDuration);
       _items.removeWhere((item) => item.timestamp.isAfter(cutoff));
     }
+    _rebuildIndex();
     notifyListeners();
     await _persist();
   }
@@ -143,10 +161,19 @@ class HistoryService extends ChangeNotifier {
   /// Completely wipes all history.
   Future<void> clearAll() => clearHistory();
 
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(seconds: 3), () => _persist());
+  }
+
   Future<void> _persist() async {
+    _persistTimer?.cancel();
     try {
-      final data = jsonEncode(_items.map((i) => i.toJson()).toList());
-      await StoragePersistenceHelper.writeData(_fileName, data);
+      final snapshot = _items.map((i) => i.toJson()).toList();
+      final data = snapshot.length > 100
+          ? await Isolate.run(() => jsonEncode(snapshot))
+          : jsonEncode(snapshot);
+      await StoragePersistenceHelper.writeInternalOnly(_fileName, data);
     } catch (e) {
       debugPrint('HistoryService._persist error: $e');
     }

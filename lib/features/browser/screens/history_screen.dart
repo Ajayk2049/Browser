@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../models/history_item.dart';
 import '../services/history_service.dart';
@@ -16,6 +16,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
   String _searchQuery = '';
 
   @override
@@ -23,12 +24,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     super.initState();
     HistoryService.instance.init();
     _searchCtrl.addListener(() {
-      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 120), () {
+        if (!mounted) return;
+        final next = _searchCtrl.text.trim().toLowerCase();
+        if (next != _searchQuery) setState(() => _searchQuery = next);
+      });
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -72,17 +79,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ? allItems
               : allItems.where((h) => h.title.toLowerCase().contains(_searchQuery) || h.url.toLowerCase().contains(_searchQuery)).toList();
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 32.0),
-            children: [
-              _buildSearchPill(isDark),
-              const SizedBox(height: 16.0),
+          final rows = _flattenGroupedHistory(filtered);
+
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 16.0),
+                sliver: SliverToBoxAdapter(child: _buildSearchPill(isDark)),
+              ),
               if (allItems.isEmpty)
-                _buildEmptyState(isDark)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  sliver: SliverToBoxAdapter(child: _buildEmptyState(isDark)),
+                )
               else if (filtered.isEmpty)
-                const Center(child: Padding(padding: EdgeInsets.only(top: 60), child: Text('No results found', style: TextStyle(color: Color(0xFF64748B)))))
+                const SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 60),
+                      child: Text('No results found', style: TextStyle(color: Color(0xFF64748B))),
+                    ),
+                  ),
+                )
               else
-                ..._buildGroupedHistory(filtered, isDark),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 32.0),
+                  sliver: SliverList.builder(
+                    addAutomaticKeepAlives: false,
+                    itemCount: rows.length,
+                    itemBuilder: (context, index) => _buildRow(rows[index], isDark),
+                  ),
+                ),
             ],
           );
         },
@@ -129,70 +156,90 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  List<Widget> _buildGroupedHistory(List<HistoryItem> items, bool isDark) {
+  List<Object> _flattenGroupedHistory(List<HistoryItem> items) {
     final now = DateTime.now();
     final today = <HistoryItem>[];
     final yesterday = <HistoryItem>[];
     final earlier = <HistoryItem>[];
 
     for (final item in items) {
-      final diff = DateTime(now.year, now.month, now.day).difference(DateTime(item.timestamp.year, item.timestamp.month, item.timestamp.day)).inDays;
-      if (diff == 0) today.add(item);
-      else if (diff == 1) yesterday.add(item);
-      else earlier.add(item);
+      final diff = DateTime(now.year, now.month, now.day)
+          .difference(DateTime(item.timestamp.year, item.timestamp.month, item.timestamp.day))
+          .inDays;
+      if (diff == 0) {
+        today.add(item);
+      } else if (diff == 1) {
+        yesterday.add(item);
+      } else {
+        earlier.add(item);
+      }
     }
 
-    final groups = <Widget>[];
-    if (today.isNotEmpty) groups.add(_buildSection('TODAY', today, isDark, showClearAll: true));
-    if (yesterday.isNotEmpty) groups.add(_buildSection('YESTERDAY', yesterday, isDark));
-    if (earlier.isNotEmpty) groups.add(_buildSection('EARLIER', earlier, isDark));
-    return groups;
+    final rows = <Object>[];
+    void addSection(String title, List<HistoryItem> group, {bool showClearAll = false}) {
+      if (group.isEmpty) return;
+      rows.add((title: title, showClearAll: showClearAll));
+      for (var i = 0; i < group.length; i++) {
+        rows.add((item: group[i], isFirst: i == 0, isLast: i == group.length - 1));
+      }
+    }
+
+    addSection('TODAY', today, showClearAll: true);
+    addSection('YESTERDAY', yesterday);
+    addSection('EARLIER', earlier);
+    return rows;
   }
 
-  Widget _buildSection(String title, List<HistoryItem> items, bool isDark, {bool showClearAll = false}) {
+  Widget _buildRow(Object row, bool isDark) {
+    if (row is ({String title, bool showClearAll})) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 4.0, right: 4.0, top: 4.0, bottom: 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(row.title, style: const TextStyle(fontFamily: 'Inter', fontSize: 11.0, fontWeight: FontWeight.w600, letterSpacing: 0.5, color: Color(0xFF64748B))),
+            if (row.showClearAll)
+              GestureDetector(
+                onTap: () => _confirmWipeHistory(context),
+                child: Text('Clear all', style: TextStyle(fontFamily: 'Inter', fontSize: 11.0, fontWeight: FontWeight.w600, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF0F172A))),
+              ),
+          ],
+        ),
+      );
+    }
+    final entry = row as ({HistoryItem item, bool isFirst, bool isLast});
     final cardBg = isDark ? const Color(0xFF131722) : const Color(0xFFFFFFFF);
     final cardBorder = isDark ? const Color(0xFF272E3F) : const Color(0xFFE2E8F0);
     final dividerColor = isDark ? const Color(0xFF1A202E) : const Color(0xFFF1F5F9);
+    final topR = entry.isFirst ? const Radius.circular(18.0) : Radius.zero;
+    final botR = entry.isLast ? const Radius.circular(18.0) : Radius.zero;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4.0, right: 4.0, bottom: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(title, style: const TextStyle(fontFamily: 'Inter', fontSize: 11.0, fontWeight: FontWeight.w600, letterSpacing: 0.5, color: Color(0xFF64748B))),
-                if (showClearAll)
-                  GestureDetector(
-                    onTap: () => _confirmWipeHistory(context),
-                    child: Text('Clear all', style: TextStyle(fontFamily: 'Inter', fontSize: 11.0, fontWeight: FontWeight.w600, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF0F172A))),
-                  ),
-              ],
-            ),
+      padding: EdgeInsets.only(bottom: entry.isLast ? 20.0 : 0.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.vertical(top: topR, bottom: botR),
+          border: Border(
+            left: BorderSide(color: cardBorder),
+            right: BorderSide(color: cardBorder),
+            top: entry.isFirst ? BorderSide(color: cardBorder) : BorderSide.none,
+            bottom: entry.isLast ? BorderSide(color: cardBorder) : BorderSide.none,
           ),
-          Container(
-            decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(18.0), border: Border.all(color: cardBorder, width: 1.0)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18.0),
-              child: Column(
-                children: [
-                  for (var i = 0; i < items.length; i++) ...[
-                    if (i > 0) Container(height: 1.0, margin: const EdgeInsets.only(left: 64.0, right: 12.0), color: dividerColor),
-                    HistoryItemTile(
-                      item: items[i],
-                      isDark: isDark,
-                      onTap: () => Navigator.of(context).pop(items[i].url),
-                      onDelete: () => HistoryService.instance.removeItem(items[i].id),
-                    ),
-                  ],
-                ],
-              ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!entry.isFirst)
+              Container(height: 1.0, margin: const EdgeInsets.only(left: 64.0, right: 12.0), color: dividerColor),
+            HistoryItemTile(
+              item: entry.item,
+              isDark: isDark,
+              onTap: () => Navigator.of(context).pop(entry.item.url),
+              onDelete: () => HistoryService.instance.removeItem(entry.item.id),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

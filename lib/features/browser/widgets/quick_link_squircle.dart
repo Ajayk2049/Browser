@@ -85,6 +85,8 @@ class QuickLinkSquircle extends StatelessWidget {
         faviconUrl,
         width: 30,
         height: 30,
+        cacheWidth: 64,
+        cacheHeight: 64,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => _buildFallbackLetter(colorScheme),
       ),

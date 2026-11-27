@@ -50,7 +50,9 @@ class GeckoPlatformView(
         channel.setMethodCallHandler(this)
         runtime = GeckoRuntimeProvider.get(context)
         session.open(runtime!!)
-        geckoView.setSession(session)
+        if (isSessionActive) {
+            geckoView.setSession(session)
+        }
         ExtensionManager.attachSession(session)
         android.util.Log.d("NavPerf", "Session opened, active=$isSessionActive")
         session.setActive(isSessionActive)
@@ -321,15 +323,24 @@ class GeckoPlatformView(
                 isSessionActive = active
                 session.setActive(active)
                 session.setPriorityHint(if (priorityHigh) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
+                if (active) {
+                    if (geckoView.session !== session) {
+                        geckoView.setSession(session)
+                    }
+                    geckoView.invalidate()
+                    geckoView.requestLayout()
+                } else if (!priorityHigh && geckoView.session === session) {
+                    geckoView.releaseSession()
+                }
                 result.success(true)
             }
             "onResume" -> {
                 session.setActive(isSessionActive)
                 session.setPriorityHint(if (isSessionActive) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
-                if (geckoView.session == null) {
-                    geckoView.setSession(session)
-                }
                 if (isSessionActive) {
+                    if (geckoView.session !== session) {
+                        geckoView.setSession(session)
+                    }
                     geckoView.invalidate()
                     geckoView.requestLayout()
                 }
@@ -338,6 +349,9 @@ class GeckoPlatformView(
             "loadUrl" -> {
                 val url = call.argument<String>("url") ?: ""
                 isSessionActive = true
+                if (geckoView.session !== session) {
+                    geckoView.setSession(session)
+                }
                 session.setActive(true)
                 session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
                 session.loadUri(url)

@@ -26,9 +26,9 @@ class StoragePersistenceHelper {
 
       for (final p in candidatePaths) {
         final dir = Directory(p);
-        if (!dir.existsSync()) {
+        if (!await dir.exists()) {
           try {
-            dir.createSync(recursive: true);
+            await dir.create(recursive: true);
           } catch (_) {
             continue;
           }
@@ -39,6 +39,33 @@ class StoragePersistenceHelper {
       debugPrint('StoragePersistenceHelper.getExternalBackupFile error: $e');
     }
     return null;
+  }
+
+  /// Fast-path read from internal storage only (no external storage probe).
+  static Future<String?> readInternalOnly(String fileName) async {
+    try {
+      final internal = await getInternalFile(fileName);
+      if (await internal.exists()) {
+        final content = await internal.readAsString();
+        if (content.trim().isNotEmpty) return content;
+      }
+    } catch (e) {
+      debugPrint('StoragePersistenceHelper.readInternalOnly error for $fileName: $e');
+    }
+    return null;
+  }
+
+  /// Fast-path atomic write to internal storage only (avoids external backup on hot paths).
+  static Future<void> writeInternalOnly(String fileName, String content) async {
+    try {
+      final internal = await getInternalFile(fileName);
+      final tmp = File('${internal.path}.tmp');
+      await tmp.writeAsString(content);
+      if (await internal.exists()) await internal.delete();
+      await tmp.rename(internal.path);
+    } catch (e) {
+      debugPrint('StoragePersistenceHelper.writeInternalOnly error for $fileName: $e');
+    }
   }
 
   /// Loads content from internal file; falls back to external backup file if missing.
