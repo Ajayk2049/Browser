@@ -36,13 +36,6 @@ class SearchSuggestionsOverlay extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(AppRadius.card),
           border: Border.all(color: border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-              blurRadius: 16.0,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.card),

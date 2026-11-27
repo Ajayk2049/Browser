@@ -263,9 +263,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
-  Future<void> _openBookmarks() async { final u = await context.push<String>('/bookmarks'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
-  Future<void> _openHistory() async { final u = await context.push<String>('/history'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
-  Future<void> _openSettings() async { final u = await context.push<String>('/settings'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
+  Future<T?> _pushPausedRoute<T>(String route) async {
+    if (!_activeTab.isHome) {
+      _activeTab.controller.setActive(false, priorityHigh: true);
+    }
+    final res = await context.push<T>(route);
+    if (mounted && !_activeTab.isHome) {
+      _activeTab.controller.setActive(true, priorityHigh: true);
+    }
+    return res;
+  }
+
+  Future<void> _openBookmarks() async { final u = await _pushPausedRoute<String>('/bookmarks'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
+  Future<void> _openHistory() async { final u = await _pushPausedRoute<String>('/history'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
+  Future<void> _openSettings() async { final u = await _pushPausedRoute<String>('/settings'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
+  Future<void> _openDownloads() async => _pushPausedRoute<void>('/downloads');
 
   void _handleMenuAction(BrowserMenuAction action) {
     if (action == BrowserMenuAction.forward) {
@@ -274,7 +286,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (_activeTab.isHome) ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
       else setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
     } else if (action == BrowserMenuAction.settings) _openSettings();
-    else if (action == BrowserMenuAction.downloadManager) context.push('/downloads');
+    else if (action == BrowserMenuAction.downloadManager) _openDownloads();
     else if (action == BrowserMenuAction.bookmarks) _openBookmarks();
     else if (action == BrowserMenuAction.history) _openHistory();
   }
@@ -464,7 +476,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     isHome: _activeTab.isHome, isPrivate: _isPrivateMode,
                   ),
                   if (_activeTab.isLoading)
-                    LinearProgressIndicator(value: _activeTab.progress > 0 ? _activeTab.progress : null, minHeight: 2, color: colorScheme.primary, backgroundColor: colorScheme.surfaceContainerHighest),
+                    RepaintBoundary(
+                      child: LinearProgressIndicator(
+                        value: _activeTab.progress.clamp(0.05, 1.0),
+                        minHeight: 2,
+                        color: colorScheme.primary,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                      ),
+                    ),
                   Expanded(child: IndexedStack(index: activeIndex, children: [for (final tab in _activeTabs) _buildTabView(tab)])),
                   if (_isFindInPageVisible) FindInPageBar(
                     currentMatch: _findCurrent, totalMatches: _findTotal,
@@ -483,7 +502,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         bottomNavigationBar: BrowserBottomBar(
           canGoForward: _activeTab.canGoForward, onForward: () => _activeTab.controller.goForward(),
           onShare: _sharePage, canShare: !_activeTab.isHome && _activeTab.url.isNotEmpty,
-          isHome: _activeTab.isHome, onHome: _loadHome, onDownloads: () => context.push('/downloads'),
+          isHome: _activeTab.isHome, onHome: _loadHome, onDownloads: _openDownloads,
           tabCount: _activeTabs.where((t) => !t.isHome).length,
           isPrivate: _isPrivateMode, onOpenTabs: _openTabsSheet, onNewTab: () => _newTab(), onMenuAction: _handleMenuAction,
         ),

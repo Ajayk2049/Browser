@@ -196,8 +196,7 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                child: Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   decoration: BoxDecoration(

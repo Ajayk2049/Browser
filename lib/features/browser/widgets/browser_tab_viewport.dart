@@ -42,6 +42,7 @@ class BrowserTabViewport extends StatelessWidget {
         initialUrl: tab.url,
         controller: tab.controller,
         isPrivate: tab.isPrivate,
+        isActive: isActive,
         onPageStarted: (url) {
           tab..url = url..isLoading = true..error = null..pageError = null;
           if (isActive) onUrlChanged(url);

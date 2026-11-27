@@ -184,13 +184,6 @@ class _BrowserMenuCard extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(AppRadius.m3Lg),
           border: Border.all(color: border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(

@@ -27,18 +27,16 @@ class FloatingMediaGrabberButton extends StatelessWidget {
     final badgeBg = isDark ? Colors.white : const Color(0xFF0F172A);
     final badgeFg = isDark ? const Color(0xFF0F172A) : Colors.white;
 
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutBack,
+    if (!isVisible) return const SizedBox.shrink();
+
+    return Positioned(
       right: 16,
-      bottom: isVisible ? 16 : -80,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 250),
-        opacity: isVisible ? 1.0 : 0.0,
+      bottom: 16,
+      child: RepaintBoundary(
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: isVisible ? onTap : null,
+            onTap: onTap,
             borderRadius: BorderRadius.circular(AppRadius.pill),
             child: Container(
               height: 48,
@@ -47,13 +45,6 @@ class FloatingMediaGrabberButton extends StatelessWidget {
                 color: bg,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
                 border: Border.all(color: border, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(isDark ? 80 : 30),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -64,31 +55,33 @@ class FloatingMediaGrabberButton extends StatelessWidget {
                     color: iconColor,
                   ),
                   const SizedBox(width: 8),
-                  if (loading || count > 0) ...[
-                    if (loading)
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: iconColor),
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: badgeBg,
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                        ),
-                        child: Text(
-                          count > 9 ? '9+' : '$count',
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: badgeFg,
-                          ),
+                  if (loading)
+                    Text(
+                      'Finding streams…',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: iconColor,
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: badgeBg,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                      child: Text(
+                        count > 9 ? '9+' : '$count',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: badgeFg,
                         ),
                       ),
-                  ],
+                    ),
                 ],
               ),
             ),

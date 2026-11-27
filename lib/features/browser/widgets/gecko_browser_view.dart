@@ -18,8 +18,11 @@ class GeckoBrowserController {
     _channel = null;
   }
 
-  Future<void> setActive(bool active) async {
-    await _channel?.invokeMethod('setActive', {'active': active});
+  Future<void> setActive(bool active, {bool? priorityHigh}) async {
+    await _channel?.invokeMethod('setActive', {
+      'active': active,
+      if (priorityHigh != null) 'priorityHigh': priorityHigh,
+    });
   }
 
   Future<void> onResume() async {
@@ -64,6 +67,7 @@ class GeckoBrowserView extends StatefulWidget {
   final String initialUrl;
   final GeckoBrowserController controller;
   final bool isPrivate;
+  final bool isActive;
   final ValueChanged<String>? onPageStarted;
   final ValueChanged<bool>? onPageFinished;
   final ValueChanged<int>? onProgressChanged;
@@ -83,6 +87,7 @@ class GeckoBrowserView extends StatefulWidget {
     required this.initialUrl,
     required this.controller,
     this.isPrivate = false,
+    this.isActive = true,
     this.onPageStarted,
     this.onPageFinished,
     this.onProgressChanged,
@@ -115,11 +120,23 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> with WidgetsBinding
   }
 
   @override
+  void didUpdateWidget(covariant GeckoBrowserView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      widget.controller.setActive(widget.isActive);
+    }
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      widget.controller.onResume();
+      if (widget.isActive) {
+        widget.controller.onResume();
+      } else {
+        widget.controller.setActive(false);
+      }
     } else if (state == AppLifecycleState.paused) {
-      widget.controller.setActive(false);
+      widget.controller.setActive(false, priorityHigh: widget.isActive);
     }
   }
 
@@ -206,6 +223,7 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> with WidgetsBinding
       'initialUrl': widget.initialUrl,
       'fontSizeFactor': AppearanceSettingsService.instance.fontSizeFactor,
       'isPrivate': widget.isPrivate,
+      'isActive': widget.isActive,
     };
 
     return PlatformViewLink(

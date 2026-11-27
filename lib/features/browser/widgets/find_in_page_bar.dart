@@ -73,13 +73,6 @@ class _FindInPageBarState extends State<FindInPageBar> {
         color: cardBg,
         borderRadius: BorderRadius.circular(AppRadius.m3Lg),
         border: Border.all(color: borderColor, width: 1.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(isDark ? 80 : 25),
-            blurRadius: 14.0,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
         children: [

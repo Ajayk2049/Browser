@@ -37,12 +37,14 @@ class GeckoPlatformView(
         GeckoSessionSettings.Builder()
             .usePrivateMode(creationParams?.get("isPrivate") as? Boolean ?: false)
             .useTrackingProtection(true)
+            .suspendMediaWhenInactive(true)
             .build()
     )
     private val channel = MethodChannel(messenger, "com.dab/geckoview_$id")
     private var runtime: GeckoRuntime? = null
     private var currentTitle: String = ""
     private var currentPageUrl: String = ""
+    private var isSessionActive: Boolean = creationParams?.get("isActive") as? Boolean ?: true
 
     init {
         channel.setMethodCallHandler(this)
@@ -50,9 +52,9 @@ class GeckoPlatformView(
         session.open(runtime!!)
         geckoView.setSession(session)
         ExtensionManager.attachSession(session)
-        android.util.Log.d("NavPerf", "Session opened, activating")
-        android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
-        session.setActive(true)
+        android.util.Log.d("NavPerf", "Session opened, active=$isSessionActive")
+        session.setActive(isSessionActive)
+        session.setPriorityHint(if (isSessionActive) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
 
         geckoView.isFocusable = true
         geckoView.isFocusableInTouchMode = true
@@ -315,23 +317,29 @@ class GeckoPlatformView(
         when (call.method) {
             "setActive" -> {
                 val active = call.argument<Boolean>("active") ?: true
-                android.util.Log.d("NavPerf", "setActive($active) on session ${System.identityHashCode(session)}")
+                val priorityHigh = call.argument<Boolean>("priorityHigh") ?: active
+                isSessionActive = active
                 session.setActive(active)
+                session.setPriorityHint(if (priorityHigh) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
                 result.success(true)
             }
             "onResume" -> {
-                session.setActive(true)
+                session.setActive(isSessionActive)
+                session.setPriorityHint(if (isSessionActive) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
                 if (geckoView.session == null) {
                     geckoView.setSession(session)
                 }
-                geckoView.invalidate()
-                geckoView.requestLayout()
+                if (isSessionActive) {
+                    geckoView.invalidate()
+                    geckoView.requestLayout()
+                }
                 result.success(true)
             }
             "loadUrl" -> {
                 val url = call.argument<String>("url") ?: ""
-                android.util.Log.d("NavPerf", "setActive(true) on session ${System.identityHashCode(session)}")
+                isSessionActive = true
                 session.setActive(true)
+                session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
                 session.loadUri(url)
                 result.success(true)
             }
