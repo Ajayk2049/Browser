@@ -47,14 +47,18 @@ PoTokenWebView.downloadAndRunBotguard()</script></head><body></body></html>"""
     private val tokenCache = LruCache<String, String>(16)
     @Volatile private var session: BotGuardSession? = null
     private val sessionLock = Any()
+    private val idleCloseRunnable = Runnable { resetSession() }
+    private const val IDLE_CLOSE_MS = 45_000L
 
     fun mint(context: Context, identifier: String): String? {
         if (identifier.isBlank()) return null
         tokenCache.get(identifier)?.let { return it }
+        mainHandler.removeCallbacks(idleCloseRunnable)
         return try {
             val active = getOrCreateSession(context.applicationContext)
             val token = active.mint(identifier)
             if (!token.isNullOrBlank()) tokenCache.put(identifier, token)
+            mainHandler.postDelayed(idleCloseRunnable, IDLE_CLOSE_MS)
             token
         } catch (e: Exception) {
             Log.w(TAG, "PoToken mint failed for ${identifier.take(12)}: ${e.message}")

@@ -165,21 +165,28 @@
     } catch (e) {}
   }
 
+  function inspectMediaElement(el) {
+    if (!el || !el.tagName) return;
+    var tag = el.tagName.toUpperCase();
+    if (tag !== "VIDEO" && tag !== "AUDIO") return;
+    var isAudio = tag === "AUDIO";
+    var mime = el.getAttribute("type") || "";
+    var totalVideos = isAudio ? 0 : document.querySelectorAll("video").length;
+    var candidates = [el.currentSrc, el.src, el.getAttribute("src")];
+    for (var j = 0; j < candidates.length; j++) {
+      var u = resolveHttpUrl(candidates[j]);
+      if (u) emitGeneric(u, isAudio ? "audio" : "video", mime, isPreviewMedia(el, u, isAudio, totalVideos));
+    }
+  }
+
   send({ type: "hello", from: "content", hasWebRequest: true, hasOnBeforeRequest: true });
 
   if (isYtHost) {
     scanYouTube();
-    setInterval(scanYouTube, 3000);
-  } else {
+  } else if (!isSearchPage) {
     scanDomMedia();
-    var timer = null;
-    try {
-      var obs = new MutationObserver(function () {
-        if (timer) return;
-        timer = setTimeout(function () { timer = null; scanDomMedia(); }, 350);
-      });
-      obs.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
-    } catch (e) {}
-    setInterval(scanDomMedia, 4000);
+    var onMediaEvent = function (ev) { inspectMediaElement(ev && ev.target); };
+    document.addEventListener("loadedmetadata", onMediaEvent, true);
+    document.addEventListener("play", onMediaEvent, true);
   }
 })();

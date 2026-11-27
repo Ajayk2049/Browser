@@ -287,23 +287,24 @@
   }
 
   try {
+    const MEDIA_TYPES = ["media", "xmlhttprequest", "other", "main_frame", "sub_frame"];
     browser.webRequest.onBeforeRequest.addListener(
       onYtRequest,
-      { urls: ["*://*.googlevideo.com/videoplayback*", "*://*/videoplayback*"] },
+      { urls: ["*://*.googlevideo.com/videoplayback*", "*://*/videoplayback*"], types: ["media", "xmlhttprequest", "other"] },
       []
     );
     browser.webRequest.onBeforeSendHeaders.addListener(
       onBeforeSendHeaders,
-      { urls: ["<all_urls>"] },
+      { urls: ["<all_urls>"], types: MEDIA_TYPES },
       ["requestHeaders"]
     );
     browser.webRequest.onHeadersReceived.addListener(
       onHeadersReceived,
-      { urls: ["<all_urls>"] },
+      { urls: ["<all_urls>"], types: MEDIA_TYPES },
       ["responseHeaders"]
     );
-    browser.webRequest.onCompleted.addListener(cleanupReq, { urls: ["<all_urls>"] });
-    browser.webRequest.onErrorOccurred.addListener(cleanupReq, { urls: ["<all_urls>"] });
+    browser.webRequest.onCompleted.addListener(cleanupReq, { urls: ["<all_urls>"], types: MEDIA_TYPES });
+    browser.webRequest.onErrorOccurred.addListener(cleanupReq, { urls: ["<all_urls>"], types: MEDIA_TYPES });
     log("all-site + YT listeners registered");
   } catch (e) {
     log("addListener failed:", String(e));

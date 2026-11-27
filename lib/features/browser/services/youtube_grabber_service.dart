@@ -89,9 +89,26 @@ class YoutubeGrabberService {
     }
   }
 
+  static final Map<String, ({DateTime cachedAt, List<DetectedMedia> items})> _streamCache = {};
+  static const Duration _cacheTtl = Duration(minutes: 15);
+
+  List<DetectedMedia>? getCachedStreams(String url) {
+    final vId = extractVideoId(url);
+    if (vId == null) return null;
+    final entry = _streamCache[vId];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.cachedAt) > _cacheTtl) {
+      _streamCache.remove(vId);
+      return null;
+    }
+    return entry.items;
+  }
+
   Future<List<DetectedMedia>> extractStreams(String url) async {
     final vId = extractVideoId(url);
     if (vId == null && !isYouTubeUrl(url)) return [];
+    final cached = getCachedStreams(url);
+    if (cached != null) return cached;
     final targetId = vId ?? url;
     try {
       final tokens = await YoutubeDownloader.fetchSessionTokens(targetId);
@@ -103,6 +120,10 @@ class YoutubeGrabberService {
           recordVideoId(item.url, item.videoId!);
           if (item.audioUrl != null) recordVideoId(item.audioUrl!, item.videoId!);
         }
+      }
+      if (vId != null && items.isNotEmpty) {
+        if (_streamCache.length >= 16) _streamCache.remove(_streamCache.keys.first);
+        _streamCache[vId] = (cachedAt: DateTime.now(), items: items);
       }
       return items;
     } catch (e) {

@@ -83,7 +83,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
       _activeTab.isLoaded = true;
     });
-    if (!_activeTab.isHome) _checkYouTube(_activeTab.url);
   }
 
   void _persistTabs() => TabPersistenceService.instance.saveTabs([for (final t in _normalTabs) if (!t.isHome) TabPersistenceRecord(id: t.id, url: t.url, title: t.title)]);
@@ -114,7 +113,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _activeTab.controller.loadUrl(resolvedUrl);
     _lastCheckedVideoId = null;
     setState(() { _activeTab..isLoaded = true..error = null..pageError = null..url = resolvedUrl; _urlController.text = resolvedUrl; _detectedMedia.clear(); });
-    _checkYouTube(resolvedUrl);
     if (!_isPrivateMode) _persistTabs();
   }
 
@@ -141,7 +139,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
     if (oldTab.id != _activeTab.id) {
       if (!oldTab.isHome) oldTab.controller.setActive(false);
-      if (!_activeTab.isHome) { _activeTab.controller.setActive(true); _checkYouTube(_activeTab.url); }
+      if (!_activeTab.isHome) _activeTab.controller.setActive(true);
     }
   }
 
@@ -173,7 +171,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _detectedMedia.clear();
     });
     if (oldTab.id != _activeTab.id && !oldTab.isHome) oldTab.controller.setActive(false);
-    _checkYouTube(url);
     if (!priv) _persistTabs();
   }
 
@@ -342,8 +339,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
       setState(() => _detectedMedia..clear()..addAll(generic));
       return;
     }
-    setState(_detectedMedia.clear);
-    _checkYouTube(u);
+    final cached = YoutubeGrabberService.instance.getCachedStreams(u);
+    final sniffed = MediaSnifferService.instance.buildItems(vid, _activeTab.title.isNotEmpty ? _activeTab.title : u);
+    setState(() {
+      _detectedMedia
+        ..clear()
+        ..addAll(sniffed)
+        ..addAll(cached ?? const []);
+    });
   }
   bool get _isDetecting => _isDetectingMedia && _detectingVideoId == YoutubeGrabberService.extractVideoId(_activeTab.url);
   Future<void> _checkYouTube(String u) async {
