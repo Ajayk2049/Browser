@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/browser_context_element.dart';
 import '../models/browser_page_error.dart';
 import '../models/browser_tab.dart';
 import '../services/history_service.dart';
@@ -16,6 +17,8 @@ class BrowserTabViewport extends StatelessWidget {
   final ValueChanged<String> onDownloadPrompt;
   final void Function(String url, String title, String type)? onMediaDetected;
   final void Function(int current, int total)? onFinderResult;
+  final ValueChanged<BrowserContextElement>? onContextMenu;
+  final ValueChanged<String>? onSearchSelectedText;
   final VoidCallback onSync;
 
   const BrowserTabViewport({
@@ -26,6 +29,8 @@ class BrowserTabViewport extends StatelessWidget {
     required this.onDownloadPrompt,
     this.onMediaDetected,
     this.onFinderResult,
+    this.onContextMenu,
+    this.onSearchSelectedText,
     required this.onSync,
   });
 
@@ -96,6 +101,12 @@ class BrowserTabViewport extends StatelessWidget {
             ..error = null
             ..isLoading = false;
           if (isActive) onSync();
+        },
+        onContextMenu: (el) {
+          if (isActive) onContextMenu?.call(el);
+        },
+        onSearchSelectedText: (text) {
+          if (isActive) onSearchSelectedText?.call(text);
         },
       ),
     );

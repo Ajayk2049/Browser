@@ -1,6 +1,9 @@
 package com.dab.browser
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -39,6 +42,7 @@ class GeckoPlatformView(
     private val channel = MethodChannel(messenger, "com.dab/geckoview_$id")
     private var runtime: GeckoRuntime? = null
     private var currentTitle: String = ""
+    private var currentPageUrl: String = ""
 
     init {
         channel.setMethodCallHandler(this)
@@ -83,6 +87,19 @@ class GeckoPlatformView(
                 url.contains("/hls/") || url.contains(".m3u8?")
     }
 
+    private fun isSearchOrUiMedia(url: String, pageUrl: String): Boolean {
+        val u = url.lowercase()
+        val p = pageUrl.lowercase()
+        if (u.contains("gstatic.com/") || u.contains("translate.google.") || u.contains("google.com/speech-api")) {
+            return true
+        }
+        return p.contains("google.") && p.contains("/search") ||
+            p.contains("bing.com/search") ||
+            p.contains("duckduckgo.com/") ||
+            p.contains("search.brave.com/") ||
+            p.contains("startpage.com/")
+    }
+
     private fun getMediaType(url: String): String {
         return if (url.contains("audio") || url.endsWith(".mp3") || url.endsWith(".m4a") || url.endsWith(".aac")) "audio"
         else if (url.contains(".m3u8") || url.contains("/hls/")) "stream"
@@ -97,7 +114,18 @@ class GeckoPlatformView(
         }
     }
 
+    private tailrec fun Context.findActivity(): Activity? = when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
     private fun setupDelegates() {
+        geckoContext.findActivity()?.let { activity ->
+            session.selectionActionDelegate = BrowserSelectionActionDelegate(activity) { text ->
+                invokeFlutter("onSearchSelectedText", mapOf("text" to text))
+            }
+        }
         session.contentBlockingDelegate = object : ContentBlocking.Delegate {
             override fun onContentBlocked(s: GeckoSession, event: ContentBlocking.BlockEvent) {
                 android.util.Log.d("ExtDebug", "Blocked content: uri=${event.uri}")
@@ -110,7 +138,8 @@ class GeckoPlatformView(
                 perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
-                invokeFlutter("onLocationChange", mapOf("url" to (url ?: "")))
+                currentPageUrl = url ?: ""
+                invokeFlutter("onLocationChange", mapOf("url" to currentPageUrl))
             }
 
             override fun onCanGoBack(s: GeckoSession, canGoBack: Boolean) {
@@ -134,7 +163,7 @@ class GeckoPlatformView(
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-                if (isMediaStream(lower)) {
+                if (isMediaStream(lower) && !isSearchOrUiMedia(uri, currentPageUrl)) {
                     invokeFlutter("onMediaDetected", mapOf("url" to uri, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(lower)))
                 }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
@@ -146,7 +175,7 @@ class GeckoPlatformView(
                     invokeFlutter("onDownloadPrompt", mapOf("url" to uri))
                     return null
                 }
-                if (isMediaStream(lower)) {
+                if (isMediaStream(lower) && !isSearchOrUiMedia(uri, currentPageUrl)) {
                     invokeFlutter("onMediaDetected", mapOf("url" to uri, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(lower)))
                 }
                 session.loadUri(uri)
@@ -201,6 +230,7 @@ class GeckoPlatformView(
 
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(s: GeckoSession, url: String) {
+                currentPageUrl = url
                 invokeFlutter("onPageStart", mapOf("url" to url))
             }
 
@@ -219,15 +249,59 @@ class GeckoPlatformView(
                 invokeFlutter("onTitleChange", mapOf("title" to currentTitle))
             }
 
+            override fun onContextMenu(
+                s: GeckoSession,
+                screenX: Int,
+                screenY: Int,
+                element: GeckoSession.ContentDelegate.ContextElement
+            ) {
+                val hasLink = !element.linkUri.isNullOrEmpty()
+                val hasSrc = !element.srcUri.isNullOrEmpty()
+                if (!hasLink && !hasSrc) return
+                val mediaType = when (element.type) {
+                    GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE -> "image"
+                    GeckoSession.ContentDelegate.ContextElement.TYPE_VIDEO -> "video"
+                    GeckoSession.ContentDelegate.ContextElement.TYPE_AUDIO -> "audio"
+                    else -> "none"
+                }
+                geckoView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                invokeFlutter(
+                    "onContextMenu",
+                    mapOf(
+                        "baseUri" to (element.baseUri ?: ""),
+                        "linkUri" to (element.linkUri ?: ""),
+                        "srcUri" to (element.srcUri ?: ""),
+                        "title" to (element.title ?: ""),
+                        "altText" to (element.altText ?: ""),
+                        "textContent" to (element.textContent ?: ""),
+                        "type" to mediaType
+                    )
+                )
+            }
+
             override fun onExternalResponse(s: GeckoSession, response: WebResponse) {
                 val url = response.uri
                 if (response.body != null && WebResponseDownloader.shouldStreamDirectly(url)) {
                     WebResponseDownloader.streamToDownloads(geckoContext, response)
                     return
                 }
+                var contentType = ""
+                var contentDisposition = ""
+                for ((k, v) in response.headers) {
+                    if (k.equals("content-type", ignoreCase = true)) contentType = v.lowercase()
+                    else if (k.equals("content-disposition", ignoreCase = true)) contentDisposition = v.lowercase()
+                }
                 try { response.body?.close() } catch (_: Exception) {}
-                if (isMediaStream(url.lowercase())) {
-                    invokeFlutter("onMediaDetected", mapOf("url" to url, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to getMediaType(url.lowercase())))
+                val lower = url.lowercase()
+                val isAttachment = contentDisposition.contains("attachment")
+                val isInlineMedia = isMediaStream(lower) || contentType.startsWith("audio/") || contentType.startsWith("video/")
+                if (isAttachment) {
+                    invokeFlutter("onDownloadPrompt", mapOf("url" to url))
+                } else if (isInlineMedia) {
+                    if (!isSearchOrUiMedia(url, currentPageUrl)) {
+                        val type = if (contentType.startsWith("audio/")) "audio" else getMediaType(lower)
+                        invokeFlutter("onMediaDetected", mapOf("url" to url, "title" to currentTitle.ifEmpty { "Media Stream" }, "type" to type))
+                    }
                 } else {
                     invokeFlutter("onDownloadPrompt", mapOf("url" to url))
                 }

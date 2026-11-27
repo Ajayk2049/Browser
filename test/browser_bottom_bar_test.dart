@@ -11,40 +11,37 @@ void main() {
   }
 
   group('BrowserBottomBar', () {
-    testWidgets('renders all 5 navigation actions and responds to taps', (tester) async {
-      var forwardTapped = false;
+    testWidgets('renders Share, Home, Downloads, Tabs, New Tab, Menu and responds to taps', (tester) async {
       var shareTapped = false;
       var homeTapped = false;
+      var downloadsTapped = false;
       var tabsTapped = false;
+      var newTabTapped = false;
       var menuTapped = false;
 
       await tester.pumpWidget(
         buildTestableWidget(
           BrowserBottomBar(
-            canGoForward: true,
-            onForward: () => forwardTapped = true,
+            canShare: true,
             onShare: () => shareTapped = true,
             onHome: () => homeTapped = true,
+            onDownloads: () => downloadsTapped = true,
             tabCount: 3,
             onOpenTabs: () => tabsTapped = true,
+            onNewTab: () => newTabTapped = true,
             onMenu: () => menuTapped = true,
           ),
         ),
       );
 
-      // Verify labels
-      expect(find.text('Forward'), findsOneWidget);
+      expect(find.text('Forward'), findsNothing);
       expect(find.text('Share'), findsOneWidget);
       expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Downloads'), findsOneWidget);
       expect(find.text('Tabs'), findsOneWidget);
+      expect(find.text('New Tab'), findsOneWidget);
       expect(find.text('Menu'), findsOneWidget);
-
-      // Verify tab counter
       expect(find.text('3'), findsOneWidget);
-
-      // Tap actions
-      await tester.tap(find.text('Forward'));
-      expect(forwardTapped, isTrue);
 
       await tester.tap(find.text('Share'));
       expect(shareTapped, isTrue);
@@ -52,39 +49,26 @@ void main() {
       await tester.tap(find.text('Home'));
       expect(homeTapped, isTrue);
 
+      await tester.tap(find.text('Downloads'));
+      expect(downloadsTapped, isTrue);
+
       await tester.tap(find.text('Tabs'));
       expect(tabsTapped, isTrue);
+
+      await tester.tap(find.text('New Tab'));
+      expect(newTabTapped, isTrue);
 
       await tester.tap(find.text('Menu'));
       expect(menuTapped, isTrue);
     });
 
-    testWidgets('respects canGoForward disabled state', (tester) async {
-      var forwardTapped = false;
-
-      await tester.pumpWidget(
-        buildTestableWidget(
-          BrowserBottomBar(
-            canGoForward: false,
-            onForward: () => forwardTapped = true,
-            onShare: () {},
-            onHome: () {},
-            onOpenTabs: () {},
-            onMenu: () {},
-          ),
-        ),
-      );
-
-      await tester.tap(find.text('Forward'));
-      expect(forwardTapped, isFalse);
-    });
-
-    testWidgets('opens menu popup when onMenuAction is provided', (tester) async {
+    testWidgets('opens menu popup with Forward action and respects canGoForward', (tester) async {
       BrowserMenuAction? selectedAction;
 
       await tester.pumpWidget(
         buildTestableWidget(
           BrowserBottomBar(
+            canGoForward: false,
             onShare: () {},
             onHome: () {},
             onOpenTabs: () {},
@@ -96,14 +80,19 @@ void main() {
       await tester.tap(find.text('Menu'));
       await tester.pumpAndSettle();
 
+      expect(find.text('Forward'), findsOneWidget);
       expect(find.text('Settings'), findsOneWidget);
       expect(find.text('History'), findsOneWidget);
       expect(find.text('Download Manager'), findsOneWidget);
       expect(find.text('Find in page'), findsOneWidget);
 
+      // Forward is disabled when canGoForward is false
+      await tester.tap(find.text('Forward'));
+      await tester.pumpAndSettle();
+      expect(selectedAction, isNull);
+
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
-
       expect(selectedAction, BrowserMenuAction.settings);
     });
   });

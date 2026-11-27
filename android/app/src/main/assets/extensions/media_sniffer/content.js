@@ -12,6 +12,7 @@
 
   var APP = "dab.sniffer";
   var isYtHost = /(^|\.)youtube\.com$/i.test(location.hostname) || /(^|\.)youtu\.be$/i.test(location.hostname);
+  var isSearchPage = /^https?:\/\/([^/]+\.)?(google\.[^/]+\/search|bing\.com\/search|duckduckgo\.com\/|search\.brave\.com\/|startpage\.com\/)/i.test(location.href);
   var NON_MEDIA_EXT_RE = /\.(json|jsonp|txt|text|vtt|srt|ass|ssa|sub|sbv|ttml|xml|csv|log|js|mjs|css|html?|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|pdf|zip|rar|7z|apk)$/i;
   var PREVIEW_URL_RE = /(\/previews?\/|\/thumbs?\/|\/thumbnails?\/|\/trailers?\/|\/teasers?\/|\/mediabook\/|[?&_/](?:preview|trailer|teaser|mediabook|thumb)=|[_.-](?:preview|trailer|teaser|thumb|hover|mediabook)\.(?:mp4|webm|m4v)$)/i;
   var PREVIEW_ATTR_RE = /(^|[-_.\s])(preview|trailer|teaser|hover|thumb|thumbnail|mediabook|sneak|teaser)([-_.\s]|$)/i;
@@ -140,6 +141,7 @@
   }
 
   function scanDomMedia() {
+    if (isSearchPage) return;
     try {
       var totalVideos = document.querySelectorAll("video").length;
       var nodes = document.querySelectorAll("video, audio, source");

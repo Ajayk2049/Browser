@@ -102,6 +102,10 @@ class MediaSnifferService {
   static bool isAllowedMedia({required String url, required String mediaType, String mime = '', String filename = ''}) {
     final t = mediaType.toLowerCase();
     if (t != 'video' && t != 'audio' && t != 'stream') return false;
+    final lowerUrl = url.toLowerCase();
+    if (lowerUrl.contains('gstatic.com/') || lowerUrl.contains('translate.google.') || lowerUrl.contains('google.com/speech-api')) {
+      return false;
+    }
     final cleanUrlPath = (Uri.tryParse(url)?.path ?? stripQuery(url)).toLowerCase();
     if (_nonMediaExtRe.hasMatch(cleanUrlPath)) return false;
     if (filename.isNotEmpty && _nonMediaExtRe.hasMatch(filename.toLowerCase())) return false;

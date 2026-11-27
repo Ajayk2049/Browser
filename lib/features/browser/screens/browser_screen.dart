@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../downloads/downloads.dart';
 import '../../settings/services/homepage_settings_service.dart';
 import '../../settings/services/search_engine_settings_service.dart';
+import '../models/browser_context_element.dart';
 import '../models/browser_tab.dart';
 import '../models/search_engine.dart';
 import '../services/bookmarks_service.dart';
@@ -14,6 +15,7 @@ import '../services/youtube_grabber_service.dart';
 import '../utils/url_helper.dart';
 import '../widgets/browser_address_bar.dart';
 import '../widgets/browser_bottom_bar.dart';
+import '../widgets/browser_context_menu_sheet.dart';
 import '../widgets/browser_error_view.dart';
 import '../widgets/browser_home_view.dart';
 import '../widgets/browser_overflow_menu.dart';
@@ -157,6 +159,71 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (oldTab.id != _activeTab.id && !oldTab.isHome) oldTab.controller.setActive(false);
   }
 
+  void _openInNewTab(String url, {bool? isPrivate}) {
+    if (url.trim().isEmpty) return;
+    if (_isFindInPageVisible) { _isFindInPageVisible = false; _activeTab.controller.clearFindInPage(); }
+    final oldTab = _activeTab;
+    _lastCheckedVideoId = null;
+    final priv = isPrivate ?? _isPrivateMode;
+    setState(() {
+      _isPrivateMode = priv;
+      final tab = _createTab(url, priv)..isLoaded = true;
+      _activeTabId = tab.id;
+      _urlController.text = url;
+      _detectedMedia.clear();
+    });
+    if (oldTab.id != _activeTab.id && !oldTab.isHome) oldTab.controller.setActive(false);
+    _checkYouTube(url);
+    if (!priv) _persistTabs();
+  }
+
+  Future<void> _showContextMenu(BrowserContextElement element) async {
+    final action = await BrowserContextMenuSheet.show(context, element: element, isPrivateMode: _isPrivateMode);
+    if (!mounted || action == null) return;
+    switch (action) {
+      case BrowserContextAction.openInNewTab:
+        _openInNewTab(element.linkUri);
+        break;
+      case BrowserContextAction.openInPrivateTab:
+        _openInNewTab(element.linkUri, isPrivate: true);
+        break;
+      case BrowserContextAction.copyLinkAddress:
+        await Clipboard.setData(ClipboardData(text: element.linkUri));
+        _showToast('Link address copied');
+        break;
+      case BrowserContextAction.copyLinkText:
+        await Clipboard.setData(ClipboardData(text: element.textContent.trim()));
+        _showToast('Link text copied');
+        break;
+      case BrowserContextAction.downloadLink:
+        _promptDownload(element.linkUri);
+        break;
+      case BrowserContextAction.shareLink:
+        BrowserShortcutHelper.sharePage(element.linkUri, element.displayTitle);
+        break;
+      case BrowserContextAction.openMediaInNewTab:
+        _openInNewTab(element.srcUri);
+        break;
+      case BrowserContextAction.saveMedia:
+        _promptDownload(element.srcUri);
+        break;
+      case BrowserContextAction.copyMediaAddress:
+        await Clipboard.setData(ClipboardData(text: element.srcUri));
+        _showToast(element.isImage ? 'Image address copied' : 'Media address copied');
+        break;
+      case BrowserContextAction.shareMedia:
+        BrowserShortcutHelper.sharePage(element.srcUri, element.displayTitle);
+        break;
+    }
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)));
+  }
+
   void _closeTab(String id, [bool? isPrivate]) {
     _lastCheckedVideoId = null;
     setState(() {
@@ -204,7 +271,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _openSettings() async { final u = await context.push<String>('/settings'); if (u != null && u.isNotEmpty) _handleSubmit(u); }
 
   void _handleMenuAction(BrowserMenuAction action) {
-    if (action == BrowserMenuAction.findInPage) {
+    if (action == BrowserMenuAction.forward) {
+      if (_activeTab.canGoForward) _activeTab.controller.goForward();
+    } else if (action == BrowserMenuAction.findInPage) {
       if (_activeTab.isHome) ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Open a webpage to find text'), behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
       else setState(() { _isFindInPageVisible = true; _findCurrent = 0; _findTotal = 0; });
     } else if (action == BrowserMenuAction.settings) _openSettings();
@@ -411,7 +480,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         bottomNavigationBar: BrowserBottomBar(
           canGoForward: _activeTab.canGoForward, onForward: () => _activeTab.controller.goForward(),
           onShare: _sharePage, canShare: !_activeTab.isHome && _activeTab.url.isNotEmpty,
-          isHome: _activeTab.isHome, onHome: _loadHome, tabCount: _activeTabs.where((t) => !t.isHome).length,
+          isHome: _activeTab.isHome, onHome: _loadHome, onDownloads: () => context.push('/downloads'),
+          tabCount: _activeTabs.where((t) => !t.isHome).length,
           isPrivate: _isPrivateMode, onOpenTabs: _openTabsSheet, onNewTab: () => _newTab(), onMenuAction: _handleMenuAction,
         ),
       ),
@@ -434,7 +504,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
         RepaintBoundary(child: BrowserTabViewport(
           key: ValueKey(tab.id), tab: tab, isActive: isActive, onUrlChanged: _onUrlUpdated,
           onDownloadPrompt: _promptDownload, onMediaDetected: _handleMediaDetected,
-          onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }), onSync: () => setState(() {}),
+          onFinderResult: (cur, tot) => setState(() { _findCurrent = cur; _findTotal = tot; }),
+          onContextMenu: _showContextMenu,
+          onSearchSelectedText: (text) {
+            final customUrl = SearchEngineSettingsService.instance.settings.customEngineUrl;
+            final searchUrl = UrlHelper.resolveInput(text, _selectedEngine, customQueryUrl: customUrl);
+            if (searchUrl.isNotEmpty) _openInNewTab(searchUrl);
+          },
+          onSync: () => setState(() {}),
         )),
         if (tab.pageError != null)
           BrowserErrorView(

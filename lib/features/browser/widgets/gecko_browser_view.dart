@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../settings/services/appearance_settings_service.dart';
+import '../models/browser_context_element.dart';
 
 /// Controller for interacting with native Mozilla GeckoView.
 class GeckoBrowserController {
@@ -74,6 +75,8 @@ class GeckoBrowserView extends StatefulWidget {
   final void Function(String url, String title, String type)? onMediaDetected;
   final void Function(int current, int total)? onFinderResult;
   final void Function(String uri, int code, String errorKey, String categoryName)? onWebResourceError;
+  final ValueChanged<BrowserContextElement>? onContextMenu;
+  final ValueChanged<String>? onSearchSelectedText;
 
   const GeckoBrowserView({
     super.key,
@@ -91,6 +94,8 @@ class GeckoBrowserView extends StatefulWidget {
     this.onMediaDetected,
     this.onFinderResult,
     this.onWebResourceError,
+    this.onContextMenu,
+    this.onSearchSelectedText,
   });
 
   @override
@@ -171,6 +176,13 @@ class _GeckoBrowserViewState extends State<GeckoBrowserView> with WidgetsBinding
           args['errorKey'] as String? ?? 'UNKNOWN',
           args['categoryName'] as String? ?? 'NETWORK',
         );
+        break;
+      case 'onContextMenu':
+        widget.onContextMenu?.call(BrowserContextElement.fromMap(args));
+        break;
+      case 'onSearchSelectedText':
+        final text = (args['text'] as String? ?? '').trim();
+        if (text.isNotEmpty) widget.onSearchSelectedText?.call(text);
         break;
     }
   }

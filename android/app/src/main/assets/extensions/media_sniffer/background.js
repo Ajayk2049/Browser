@@ -22,6 +22,8 @@
     "stylesheet", "script", "font", "image", "imageset", "beacon", "ping", "csp_report", "websocket"
   ]);
   const AD_HOST_RE = /(doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|scorecardresearch\.com|adservice\.google\.|adnxs\.com|outbrain\.com|taboola\.com)/i;
+  const UI_AUDIO_HOST_RE = /(gstatic\.com|translate\.google\.|google\.com\/speech-api)/i;
+  const SEARCH_PAGE_RE = /^https?:\/\/([^/]+\.)?(google\.[^/]+\/search|bing\.com\/search|duckduckgo\.com\/|search\.brave\.com\/|startpage\.com\/)/i;
   const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|flv|avi|wmv|m4v|3gp|3g2)$/i;
   const AUDIO_EXT_RE = /\.(mp3|m4a|aac|flac|ogg|opus|wav|weba)$/i;
   const SEGMENT_EXT_RE = /\.(ts|m4s|cmf|cmfv|cmfa)$/i;
@@ -235,7 +237,9 @@
         if (totalBytes > 0 && totalBytes < 65536) return;
         mediaType = "video";
       } else if (mime.startsWith("audio/") || (isOctetOrBlank && (AUDIO_EXT_RE.test(path) || AUDIO_EXT_RE.test(lowerName)))) {
-        if (totalBytes > 0 && totalBytes < 32768) return;
+        const isAttachment = cd.toLowerCase().indexOf("attachment") !== -1;
+        if (!isAttachment && (UI_AUDIO_HOST_RE.test(url) || SEARCH_PAGE_RE.test(pageKey))) return;
+        if (!isAttachment && totalBytes > 0 && totalBytes < 102400) return;
         mediaType = "audio";
       } else {
         return;

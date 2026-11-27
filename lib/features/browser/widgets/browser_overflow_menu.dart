@@ -7,6 +7,7 @@ import '../../../theme/tokens/app_typography.dart';
 
 /// Actions exposed by the browser's menu.
 enum BrowserMenuAction {
+  forward(PhosphorIcons.arrowRight, 'Forward'),
   findInPage(PhosphorIcons.magnifyingGlassPlus, 'Find in page'),
   history(PhosphorIcons.clockCounterClockwise, 'History'),
   bookmarks(PhosphorIcons.bookmarksSimple, 'Bookmarks'),
@@ -24,17 +25,20 @@ enum BrowserMenuAction {
 class BrowserMenuPopup extends StatelessWidget {
   final ValueChanged<BrowserMenuAction> onSelected;
   final Widget child;
+  final bool canGoForward;
 
   const BrowserMenuPopup({
     super.key,
     required this.onSelected,
     required this.child,
+    this.canGoForward = false,
   });
 
   /// Opens the animated browser menu floating directly above the Menu button.
   static Future<BrowserMenuAction?> show(
     BuildContext context, {
     required ValueChanged<BrowserMenuAction> onSelected,
+    bool canGoForward = false,
   }) {
     final renderBox = context.findRenderObject() as RenderBox?;
     final size = MediaQuery.sizeOf(context);
@@ -47,6 +51,7 @@ class BrowserMenuPopup extends StatelessWidget {
       _BrowserMenuRoute(
         buttonRect: buttonRect,
         onSelected: onSelected,
+        canGoForward: canGoForward,
         isDark: theme.brightness == Brightness.dark,
         colorScheme: theme.colorScheme,
       ),
@@ -58,7 +63,7 @@ class BrowserMenuPopup extends StatelessWidget {
     return Builder(
       builder: (ctx) => InkWell(
         borderRadius: BorderRadius.circular(AppRadius.m3Sm),
-        onTap: () => show(ctx, onSelected: onSelected),
+        onTap: () => show(ctx, onSelected: onSelected, canGoForward: canGoForward),
         child: child,
       ),
     );
@@ -68,12 +73,14 @@ class BrowserMenuPopup extends StatelessWidget {
 class _BrowserMenuRoute extends PopupRoute<BrowserMenuAction> {
   final Rect buttonRect;
   final ValueChanged<BrowserMenuAction> onSelected;
+  final bool canGoForward;
   final bool isDark;
   final ColorScheme colorScheme;
 
   _BrowserMenuRoute({
     required this.buttonRect,
     required this.onSelected,
+    required this.canGoForward,
     required this.isDark,
     required this.colorScheme,
   });
@@ -138,6 +145,7 @@ class _BrowserMenuRoute extends PopupRoute<BrowserMenuAction> {
           child: _BrowserMenuCard(
             isDark: isDark,
             colorScheme: colorScheme,
+            canGoForward: canGoForward,
             onAction: (a) {
               Navigator.of(context).pop();
               onSelected(a);
@@ -152,11 +160,13 @@ class _BrowserMenuRoute extends PopupRoute<BrowserMenuAction> {
 class _BrowserMenuCard extends StatelessWidget {
   final bool isDark;
   final ColorScheme colorScheme;
+  final bool canGoForward;
   final ValueChanged<BrowserMenuAction> onAction;
 
   const _BrowserMenuCard({
     required this.isDark,
     required this.colorScheme,
+    required this.canGoForward,
     required this.onAction,
   });
 
@@ -186,6 +196,7 @@ class _BrowserMenuCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildItem(BrowserMenuAction.forward, enabled: canGoForward),
             _buildItem(BrowserMenuAction.findInPage),
             Divider(height: 1, thickness: 1, color: border),
             for (final a in const [
@@ -202,23 +213,25 @@ class _BrowserMenuCard extends StatelessWidget {
     );
   }
 
-  Widget _buildItem(BrowserMenuAction action) {
+  Widget _buildItem(BrowserMenuAction action, {bool enabled = true}) {
+    final iconColor = enabled ? colorScheme.onSurfaceVariant : colorScheme.onSurface.withValues(alpha: 0.3);
+    final textColor = enabled ? colorScheme.onSurface : colorScheme.onSurface.withValues(alpha: 0.35);
     return InkWell(
-      onTap: () => onAction(action),
+      onTap: enabled ? () => onAction(action) : null,
       child: SizedBox(
         height: 44,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3),
           child: Row(
             children: [
-              Icon(action.icon, size: 20, color: colorScheme.onSurfaceVariant),
+              Icon(action.icon, size: 20, color: iconColor),
               const SizedBox(width: AppSpacing.x3),
               Expanded(
                 child: Text(
                   action.label,
                   style: AppTypography.bodyMd.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurface,
+                    color: textColor,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

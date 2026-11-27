@@ -6,7 +6,7 @@ import '../../../theme/tokens/app_typography.dart';
 import 'browser_overflow_menu.dart';
 
 /// Floating/docked bottom action bar matching user layout specifications:
-/// 1. Forward, 2. Share, 3. Home (centered), 4. Tabs, 5. Menu.
+/// 1. Share, 2. Home, 3. Downloads (centered), 4. Tabs, 5. New Tab, 6. Menu.
 /// Complies with rules.md §13, §25.1, §25.2, §25.7, and §29.2 (< 250 lines).
 class BrowserBottomBar extends StatelessWidget {
   final VoidCallback? onForward;
@@ -15,6 +15,7 @@ class BrowserBottomBar extends StatelessWidget {
   final bool canShare;
   final VoidCallback onHome;
   final bool isHome;
+  final VoidCallback? onDownloads;
   final int tabCount;
   final VoidCallback onOpenTabs;
   final VoidCallback? onNewTab;
@@ -30,6 +31,7 @@ class BrowserBottomBar extends StatelessWidget {
     this.canShare = false,
     required this.onHome,
     this.isHome = false,
+    this.onDownloads,
     this.tabCount = 1,
     required this.onOpenTabs,
     this.onNewTab,
@@ -61,17 +63,7 @@ class BrowserBottomBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // 1. Forward button
-              Expanded(
-                child: _BarItem(
-                  icon: PhosphorIcons.arrowRight,
-                  label: 'Forward',
-                  enabled: canGoForward,
-                  darkStyle: darkStyle,
-                  onTap: canGoForward ? onForward : null,
-                ),
-              ),
-              // 2. Share button
+              // 1. Share button (left)
               Expanded(
                 child: _BarItem(
                   icon: PhosphorIcons.shareNetwork,
@@ -81,7 +73,7 @@ class BrowserBottomBar extends StatelessWidget {
                   onTap: canShare ? onShare : null,
                 ),
               ),
-              // 3. Home button in Center
+              // 2. Home button (left)
               Expanded(
                 child: _BarItem(
                   icon: PhosphorIcons.house,
@@ -89,6 +81,15 @@ class BrowserBottomBar extends StatelessWidget {
                   isSelected: isHome,
                   darkStyle: darkStyle,
                   onTap: onHome,
+                ),
+              ),
+              // 3. Download Manager button (center)
+              Expanded(
+                child: _BarItem(
+                  icon: PhosphorIcons.downloadSimple,
+                  label: 'Downloads',
+                  darkStyle: darkStyle,
+                  onTap: onDownloads,
                 ),
               ),
               // 4. Tabs button
@@ -114,6 +115,7 @@ class BrowserBottomBar extends StatelessWidget {
                 child: onMenuAction != null
                     ? BrowserMenuPopup(
                         onSelected: onMenuAction!,
+                        canGoForward: canGoForward,
                         child: _BarItem(
                           icon: PhosphorIcons.list,
                           label: 'Menu',
